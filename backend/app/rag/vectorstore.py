@@ -1,8 +1,9 @@
 import chromadb
 
 from app.config import settings
+from typing import Optional
 
-_client: chromadb.HttpClient | None = None
+_client: Optional[chromadb.HttpClient] = None
 
 
 def get_chroma_client() -> chromadb.HttpClient:
