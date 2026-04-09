@@ -8,19 +8,22 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check():
-    checks = {
-        "status": "ok",
-        "llm_provider": settings.llm_provider,
-        "guardrails_enabled": settings.guardrails_enabled,
-        "services": {
-            "postgres": await _check_postgres(),
-            "chromadb": await _check_chromadb(),
-            "ollama": await _check_ollama(),
-        },
+    services = {
+        "postgres": await _check_postgres(),
+        "chromadb": await _check_chromadb(),
+        "ollama": await _check_ollama(),
     }
-    # Overall status is "degraded" if any service is down
-    if not all(checks["services"].values()):
-        checks["status"] = "degraded"
+    checks = {
+        "status": "ok" if all(services.values()) else "degraded",
+        "llm_provider": settings.llm_provider,
+        "llm_model": settings.ollama_model if settings.llm_provider == "ollama" else settings.vertexai_model,
+        "guardrails_enabled": settings.guardrails_enabled,
+        "embedding_model": settings.embedding_model,
+        "chunk_size": settings.chunk_size,
+        "chunk_overlap": settings.chunk_overlap,
+        "retrieval_top_k": settings.retrieval_top_k,
+        "services": services,
+    }
     return checks
 
 

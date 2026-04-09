@@ -3,7 +3,7 @@ import logging
 import uuid
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +113,6 @@ async def get_session_messages(
 ):
     session = await db.get(ChatSession, session_id)
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Session not found")
 
     result = await db.execute(

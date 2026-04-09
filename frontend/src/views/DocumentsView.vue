@@ -12,7 +12,6 @@
         :show-file-list="false"
         accept=".pdf,.txt,.md"
         :disabled="uploading"
-        directory-dnd
       >
         <n-upload-dragger>
           <div class="upload-content">
