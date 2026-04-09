@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session, get_db
 from app.models.chat import ChatMessage, ChatSession
-from app.schemas.chat import ChatRequest, ChatSessionResponse
+from app.schemas.chat import ChatMessageResponse, ChatRequest, ChatSessionResponse
 from app.services.rag_pipeline import query_rag
 
 logger = logging.getLogger(__name__)
@@ -104,3 +104,22 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
     )
     sessions = result.scalars().all()
     return [ChatSessionResponse.model_validate(s) for s in sessions]
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
+async def get_session_messages(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    session = await db.get(ChatSession, session_id)
+    if not session:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+    return [ChatMessageResponse.model_validate(m) for m in messages]

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
 
+    # CORS
+    cors_origins: str = "http://localhost:3000"  # comma-separated
+
     model_config = {"env_file": ".env", "env_prefix": "SECURAG_"}
 
 

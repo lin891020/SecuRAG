@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import AsyncIterator
@@ -47,8 +48,8 @@ async def query_rag(
         yield f"data: {json.dumps({'type': 'done', 'sources': [], 'blocked': True})}\n\n"
         return
 
-    # Retrieve relevant chunks
-    contexts = retrieve(query)
+    # Retrieve relevant chunks (sync: embedding + ChromaDB query)
+    contexts = await asyncio.to_thread(retrieve, query)
 
     if not contexts:
         yield f"data: {json.dumps({'type': 'token', 'content': 'No relevant documents found in the knowledge base. Please upload documents first.'})}\n\n"
@@ -77,7 +78,7 @@ async def query_rag(
             "filename": c["filename"],
             "chunk_index": c["chunk_index"],
             "page_number": c["page_number"],
-            "content_preview": c["text"][:100] + "..." if len(c["text"]) > 100 else c["text"],
+            "content_preview": (c["text"][:100] + "...") if len(c["text"]) > 100 else c["text"],
         }
         for c in contexts
     ]

@@ -71,6 +71,11 @@ class GuardService:
                     {"role": "assistant", "content": output},
                 ]
             )
+            response_content = result.get("content", "")
+            blocked = self._is_blocked(response_content)
+            if blocked:
+                logger.warning("Guardrails blocked output: %s", output[:100])
+                return False, response_content
             return True, output
         except Exception as e:
             logger.error(f"Guardrails output check error: {e}")

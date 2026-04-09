@@ -108,6 +108,7 @@
 import { ref, nextTick, onMounted } from 'vue'
 import { NButton, NInput, NIcon, NTag } from 'naive-ui'
 import { SendOutline } from '@vicons/ionicons5'
+import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
 
 interface Source {
@@ -166,10 +167,24 @@ function startNewSession() {
   messages.value = []
 }
 
-function switchSession(sessionId: string) {
+async function switchSession(sessionId: string) {
   currentSessionId.value = sessionId
   messages.value = []
-  // TODO: load session messages from API
+
+  try {
+    const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`)
+    if (resp.ok) {
+      const data = await resp.json()
+      messages.value = data.map((m: any) => ({
+        role: m.role,
+        content: m.content,
+        sources: m.sources || undefined,
+      }))
+      await scrollToBottom()
+    }
+  } catch (e) {
+    console.error('Failed to load session messages:', e)
+  }
 }
 
 function sendQuickPrompt(prompt: string) {
@@ -274,7 +289,7 @@ async function sendMessage() {
 }
 
 function renderMarkdown(text: string): string {
-  return md.render(text)
+  return DOMPurify.sanitize(md.render(text))
 }
 
 function formatDate(dateStr: string): string {

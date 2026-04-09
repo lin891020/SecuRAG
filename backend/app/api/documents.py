@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 
@@ -12,10 +13,12 @@ from app.services.document_service import (
     list_documents,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 UPLOAD_DIR = Path("/app/uploads")
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -39,10 +42,17 @@ async def upload_document(
             detail=f"Unsupported file type: {suffix}. Allowed: {ALLOWED_EXTENSIONS}",
         )
 
+    # Read and enforce size limit
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)} MB.",
+        )
+
     # Save uploaded file
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     file_path = UPLOAD_DIR / f"{uuid.uuid4()}{suffix}"
-    content = await file.read()
     file_path.write_bytes(content)
 
     try:
@@ -53,10 +63,11 @@ async def upload_document(
             file_size=len(content),
         )
         return DocumentResponse.model_validate(doc)
-    except Exception as e:
+    except Exception:
+        logger.exception("Document ingestion failed for %s", file.filename)
         # Clean up file on failure
         file_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Document processing failed. Please try again.")
 
 
 @router.delete("/{doc_id}")

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -32,11 +33,11 @@ async def ingest_document(
     await db.commit()
 
     try:
-        # Parse file
-        pages = parse_file(file_path)
+        # Parse file (CPU-bound)
+        pages = await asyncio.to_thread(parse_file, file_path)
 
-        # Split into chunks
-        chunks = split_pages(pages)
+        # Split into chunks (CPU-bound)
+        chunks = await asyncio.to_thread(split_pages, pages)
 
         if not chunks:
             doc.status = "error"
@@ -44,12 +45,13 @@ async def ingest_document(
             await db.commit()
             return doc
 
-        # Embed chunks
+        # Embed chunks (CPU-bound, model inference)
         texts = [c["text"] for c in chunks]
-        embeddings = embed_texts(texts)
+        embeddings = await asyncio.to_thread(embed_texts, texts)
 
-        # Store in ChromaDB
-        add_chunks(
+        # Store in ChromaDB (IO-bound)
+        await asyncio.to_thread(
+            add_chunks,
             doc_id=str(doc.id),
             filename=filename,
             file_type=file_type,
@@ -84,7 +86,7 @@ async def delete_document(db: AsyncSession, doc_id: uuid.UUID) -> bool:
         return False
 
     # Remove from ChromaDB
-    delete_document_chunks(str(doc_id))
+    await asyncio.to_thread(delete_document_chunks, str(doc_id))
 
     # Remove from database
     await db.delete(doc)
