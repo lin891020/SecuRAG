@@ -13,8 +13,26 @@
           :class="{ active: session.id === currentSessionId }"
           @click="switchSession(session.id)"
         >
-          <span class="session-title">{{ session.title || 'New Chat' }}</span>
-          <span class="session-date">{{ formatDate(session.created_at) }}</span>
+          <div v-if="renamingSessionId === session.id" class="rename-row" @click.stop>
+            <input
+              class="rename-input"
+              v-model="renameValue"
+              @keydown.enter="confirmRename(session.id)"
+              @keydown.esc="cancelRename"
+              ref="renameInputRef"
+            />
+            <button class="icon-btn ok" @click="confirmRename(session.id)">✓</button>
+            <button class="icon-btn cancel" @click="cancelRename">✕</button>
+          </div>
+          <template v-else>
+            <div class="session-info">
+              <span class="session-title">{{ session.title || 'New Chat' }}</span>
+              <span class="session-date">{{ formatDate(session.created_at) }}</span>
+            </div>
+            <div class="session-actions" @click.stop>
+              <button class="dots-btn" @click.stop="toggleMenu(session.id, $event)">···</button>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -102,14 +120,58 @@
       </div>
     </div>
   </div>
+
+  <!-- Dropdown menu rendered at body level to avoid overflow clipping -->
+  <Teleport to="body">
+    <div
+      v-if="openMenuId"
+      class="session-menu-portal"
+      :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+      @click.stop
+    >
+      <button class="menu-item" @click="startRenameById(openMenuId!); openMenuId = null">
+        <span class="menu-icon">✎</span> 重新命名
+      </button>
+      <div class="menu-divider" />
+      <button class="menu-item danger" @click="deleteSession(openMenuId!); openMenuId = null">
+        <span class="menu-icon">🗑</span> 刪除
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { NButton, NInput, NIcon, NTag } from 'naive-ui'
 import { SendOutline } from '@vicons/ionicons5'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
+
+const renamingSessionId = ref<string | null>(null)
+const renameValue = ref('')
+const renameInputRef = ref<HTMLInputElement | null>(null)
+const openMenuId = ref<string | null>(null)
+const menuPos = ref({ top: 0, left: 0 })
+
+function toggleMenu(sessionId: string, event: MouseEvent) {
+  if (openMenuId.value === sessionId) {
+    openMenuId.value = null
+    return
+  }
+  const btn = event.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  menuPos.value = { top: rect.bottom + 4, left: rect.left }
+  openMenuId.value = sessionId
+}
+
+function closeMenu() {
+  openMenuId.value = null
+}
+
+function startRenameById(sessionId: string) {
+  const session = sessions.value.find(s => s.id === sessionId)
+  if (session) startRename(session)
+}
 
 interface Source {
   document_id: string
@@ -149,6 +211,11 @@ const quickPrompts = [
 
 onMounted(() => {
   loadSessions()
+  document.addEventListener('click', closeMenu)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeMenu)
 })
 
 async function loadSessions() {
@@ -165,6 +232,53 @@ async function loadSessions() {
 function startNewSession() {
   currentSessionId.value = null
   messages.value = []
+}
+
+function startRename(session: Session) {
+  renamingSessionId.value = session.id
+  renameValue.value = session.title || ''
+  nextTick(() => renameInputRef.value?.focus())
+}
+
+function cancelRename() {
+  renamingSessionId.value = null
+  renameValue.value = ''
+}
+
+async function confirmRename(sessionId: string) {
+  const title = renameValue.value.trim()
+  if (!title) return cancelRename()
+  try {
+    const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    if (resp.ok) {
+      const updated = await resp.json()
+      const idx = sessions.value.findIndex(s => s.id === sessionId)
+      if (idx !== -1) sessions.value[idx].title = updated.title
+    }
+  } catch (e) {
+    console.error('Rename failed:', e)
+  } finally {
+    cancelRename()
+  }
+}
+
+async function deleteSession(sessionId: string) {
+  try {
+    const resp = await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' })
+    if (resp.ok) {
+      sessions.value = sessions.value.filter(s => s.id !== sessionId)
+      if (currentSessionId.value === sessionId) {
+        currentSessionId.value = null
+        messages.value = []
+      }
+    }
+  } catch (e) {
+    console.error('Delete failed:', e)
+  }
 }
 
 async function switchSession(sessionId: string) {
@@ -336,17 +450,30 @@ async function scrollToBottom() {
   cursor: pointer;
   transition: background 0.2s;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .session-item:hover {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.session-item:hover .session-actions {
+  opacity: 1;
+}
+
 .session-item.active {
   background: rgba(99, 226, 183, 0.1);
   border: 1px solid rgba(99, 226, 183, 0.2);
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .session-title {
@@ -359,6 +486,120 @@ async function scrollToBottom() {
 .session-date {
   font-size: 11px;
   color: #888;
+}
+
+.session-actions {
+  position: relative;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.dots-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.dots-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.session-menu-portal {
+  position: fixed;
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 150px;
+  z-index: 9999;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.menu-item.danger {
+  color: #ff6b6b;
+}
+
+.menu-item.danger:hover {
+  background: rgba(255, 80, 80, 0.15);
+}
+
+.menu-icon {
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+}
+
+.menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.icon-btn.ok:hover {
+  background: rgba(99, 226, 183, 0.2);
+  color: #63e2b7;
+}
+
+.rename-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.rename-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(99, 226, 183, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
 }
 
 .chat-main {

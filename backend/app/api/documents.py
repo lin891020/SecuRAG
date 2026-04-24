@@ -2,11 +2,12 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.document import DocumentListResponse, DocumentResponse
+from app.services.audit_service import log_event
 from app.services.document_service import (
     delete_document,
     ingest_document,
@@ -29,6 +30,7 @@ async def get_documents(db: AsyncSession = Depends(get_db)):
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
+    request: Request,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
 ):
@@ -55,6 +57,7 @@ async def upload_document(
     file_path = UPLOAD_DIR / f"{uuid.uuid4()}{suffix}"
     file_path.write_bytes(content)
 
+    ip_address = request.client.host if request.client else None
     try:
         doc = await ingest_document(
             db=db,
@@ -62,20 +65,32 @@ async def upload_document(
             filename=file.filename,
             file_size=len(content),
         )
+        await log_event(
+            db,
+            event_type="upload",
+            detail={"filename": file.filename, "file_size": len(content), "doc_id": str(doc.id)},
+            ip_address=ip_address,
+        )
         return DocumentResponse.model_validate(doc)
     except Exception:
         logger.exception("Document ingestion failed for %s", file.filename)
-        # Clean up file on failure
         file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail="Document processing failed. Please try again.")
 
 
 @router.delete("/{doc_id}")
 async def remove_document(
+    request: Request,
     doc_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
     deleted = await delete_document(db, doc_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
+    await log_event(
+        db,
+        event_type="delete",
+        detail={"doc_id": str(doc_id)},
+        ip_address=request.client.host if request.client else None,
+    )
     return {"message": "Document deleted"}
