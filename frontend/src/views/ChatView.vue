@@ -617,11 +617,17 @@ function exportChat() {
       }
     }
   }
+  const session = sessions.value.find(s => s.id === currentSessionId.value)
+  const titleSlug = (session?.title || 'chat')
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 60)
   const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `secu-rag-${new Date().toISOString().split('T')[0]}.md`
+  a.download = `${titleSlug}.md`
   a.click()
   URL.revokeObjectURL(url)
 }
