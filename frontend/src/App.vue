@@ -1,6 +1,7 @@
 <template>
   <n-config-provider :theme="darkTheme">
     <n-message-provider>
+    <n-dialog-provider>
     <n-layout has-sider style="height: 100vh">
       <n-layout-sider
         bordered
@@ -33,6 +34,7 @@
         <router-view />
       </n-layout-content>
     </n-layout>
+    </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -47,6 +49,7 @@ import {
   NLayoutContent,
   NMenu,
   NMessageProvider,
+  NDialogProvider,
   NIcon,
   darkTheme,
 } from 'naive-ui'

@@ -45,3 +45,4 @@ htmlcov/
 
 # Alembic
 backend/alembic/versions/__pycache__/
+uploads_backup/
