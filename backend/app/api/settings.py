@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -10,6 +11,35 @@ router = APIRouter()
 
 class ProviderUpdate(BaseModel):
     provider: str
+
+
+class ModelUpdate(BaseModel):
+    model: str
+
+
+@router.get("/models")
+async def list_models():
+    """List models available in the local Ollama instance."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{app_settings.ollama_base_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+        models = [m["name"] for m in data.get("models", [])]
+        return {"models": models}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
+
+
+@router.patch("/model")
+async def switch_model(body: ModelUpdate, request: Request):
+    """Switch to a different Ollama model at runtime."""
+    new_provider = OllamaProvider(
+        base_url=app_settings.ollama_base_url,
+        model=body.model,
+    )
+    request.app.state.llm_provider = new_provider
+    return {"model": new_provider.model_name()}
 
 
 @router.patch("/provider")

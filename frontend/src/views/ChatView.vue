@@ -111,7 +111,18 @@
 
       <!-- Input Area -->
       <div class="input-area">
-        <div v-if="currentModel" class="model-badge">{{ currentModel }}</div>
+        <div class="model-picker-row">
+          <n-select
+            v-model:value="selectedModel"
+            :options="modelOptions"
+            size="small"
+            :consistent-menu-width="false"
+            :loading="modelsLoading"
+            :disabled="isStreaming"
+            class="model-select"
+            @update:value="switchModel"
+          />
+        </div>
         <div class="input-wrapper">
           <n-input
             v-model:value="userInput"
@@ -170,8 +181,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { NButton, NInput, NIcon, NTag } from 'naive-ui'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { NButton, NInput, NIcon, NTag, NSelect } from 'naive-ui'
 import { SendOutline, StopCircleOutline } from '@vicons/ionicons5'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
@@ -236,7 +247,12 @@ const sessions = ref<Session[]>([])
 const currentSessionId = ref<string | null>(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
-const currentModel = ref('')
+const selectedModel = ref('')
+const availableModels = ref<string[]>([])
+const modelsLoading = ref(false)
+const modelOptions = computed(() =>
+  availableModels.value.map(m => ({ label: m, value: m }))
+)
 let abortController: AbortController | null = null
 
 function stopStreaming() {
@@ -277,20 +293,45 @@ const quickPrompts = [
 
 onMounted(() => {
   loadSessions()
-  loadCurrentModel()
+  loadModels()
   document.addEventListener('click', closeMenu)
 })
 
-async function loadCurrentModel() {
+async function loadModels() {
+  modelsLoading.value = true
   try {
-    const resp = await fetch('/api/health')
-    if (resp.ok) {
-      const data = await resp.json()
-      if (data.llm_provider && data.llm_model) {
-        currentModel.value = `${data.llm_provider}/${data.llm_model}`
+    const [healthResp, modelsResp] = await Promise.all([
+      fetch('/api/health'),
+      fetch('/api/settings/models'),
+    ])
+    if (healthResp.ok) {
+      const data = await healthResp.json()
+      selectedModel.value = data.llm_model || ''
+    }
+    if (modelsResp.ok) {
+      const data = await modelsResp.json()
+      availableModels.value = data.models || []
+      if (!selectedModel.value && availableModels.value.length > 0) {
+        selectedModel.value = availableModels.value[0]
       }
     }
   } catch {}
+  finally {
+    modelsLoading.value = false
+  }
+}
+
+async function switchModel(model: string) {
+  try {
+    await fetch('/api/settings/model', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    })
+    selectedModel.value = model
+  } catch (e) {
+    console.error('Failed to switch model:', e)
+  }
 }
 
 onUnmounted(() => {
@@ -469,7 +510,11 @@ async function sendMessage() {
                 last.durationMs = Math.round((serverTs - last.serverTs) * 1000)
             }
             sources = event.sources || []
-            if (event.model) currentModel.value = event.model
+            if (event.model) {
+              // model_name() returns "ollama/llama3.2" — extract just the model part
+              const parts = event.model.split('/')
+              selectedModel.value = parts.length > 1 ? parts.slice(1).join('/') : event.model
+            }
           }
         } catch {
           // skip malformed lines
@@ -915,12 +960,14 @@ async function scrollToBottom() {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.model-badge {
-  text-align: center;
-  font-size: 11px;
-  color: #555;
-  letter-spacing: 0.03em;
-  margin-bottom: 8px;
+.model-picker-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.model-select {
+  width: 200px;
 }
 
 .input-wrapper {
