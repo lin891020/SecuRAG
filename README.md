@@ -140,39 +140,6 @@ Indexed on `event_type` and `created_at` for efficient compliance reporting quer
 
 ## Architecture
 
-```
-┌─────────────────────┐
-│      Vue 3 UI        │  Naive UI · Markdown-it · AbortController
-│  (localhost:3000)    │
-└────────┬────────────┘
-         │  HTTP / SSE
-         ▼
-┌─────────────────────────────────────────────────────┐
-│                  FastAPI Backend (localhost:8000)     │
-│                                                      │
-│  ┌──────────────┐  ┌─────────────┐  ┌────────────┐  │
-│  │ NeMo         │  │ RAG         │  │ Audit      │  │
-│  │ Guardrails   │  │ Pipeline    │  │ Service    │  │
-│  │ (input check)│  │ (SSE stream)│  │ (logging)  │  │
-│  └──────┬───────┘  └──────┬──────┘  └────────────┘  │
-│         │                 │                          │
-└─────────┼─────────────────┼──────────────────────────┘
-          │                 │
-   ┌──────┴──────┐   ┌──────┴──────┐
-   │   Ollama    │   │  ChromaDB   │
-   │  (LLM)      │   │  (Vectors)  │
-   └─────────────┘   └─────────────┘
-                            │
-                   ┌────────┴────────┐
-                   │   PostgreSQL    │
-                   │  (sessions,     │
-                   │   messages,     │
-                   │   audit logs)   │
-                   └─────────────────┘
-          ▲─────────────── All services run in Docker Compose ───────────────▲
-```
-
-
 <img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/8849e19f-2ef2-4d15-9f16-869c42171acf" />
 
 ---
