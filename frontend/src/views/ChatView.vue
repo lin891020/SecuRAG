@@ -74,6 +74,7 @@
                 <span class="step-label">{{ step.label }}</span>
                 <span class="step-time">{{ (step.durationMs / 1000).toFixed(1) }}s</span>
               </div>
+              <div v-if="msg.model" class="responded-by">Responded by {{ msg.model }}</div>
             </div>
             <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-body" />
             <div v-else>{{ msg.content }}</div>
@@ -102,6 +103,7 @@
                 <span class="step-label">{{ step.label }}</span>
                 <span class="step-time">{{ stepTime(step) }}</span>
               </div>
+              <div v-if="selectedModel" class="responded-by">Responded by {{ selectedModel }}</div>
             </div>
             <div v-if="streamingContent" v-html="renderMarkdown(streamingContent)" class="markdown-body" />
             <span v-if="streamingContent" class="cursor-blink">▊</span>
@@ -231,6 +233,7 @@ interface Message {
   content: string
   sources?: Source[]
   statusSteps?: CompletedStep[]
+  model?: string
 }
 
 interface Session {
@@ -532,6 +535,7 @@ async function sendMessage() {
       content: streamingContent.value,
       sources,
       statusSteps: completedSteps,
+      model: selectedModel.value,
     })
 
     // Refresh sessions list
@@ -943,6 +947,13 @@ async function scrollToBottom() {
   color: #555;
   min-width: 36px;
   text-align: right;
+}
+
+.responded-by {
+  font-size: 11px;
+  color: #4a4a4a;
+  margin-top: 4px;
+  padding-left: 2px;
 }
 
 .cursor-blink {
