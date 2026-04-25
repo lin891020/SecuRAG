@@ -111,6 +111,7 @@
 
       <!-- Input Area -->
       <div class="input-area">
+        <div v-if="currentModel" class="model-badge">{{ currentModel }}</div>
         <div class="input-wrapper">
           <n-input
             v-model:value="userInput"
@@ -235,6 +236,7 @@ const sessions = ref<Session[]>([])
 const currentSessionId = ref<string | null>(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
+const currentModel = ref('')
 let abortController: AbortController | null = null
 
 function stopStreaming() {
@@ -275,8 +277,21 @@ const quickPrompts = [
 
 onMounted(() => {
   loadSessions()
+  loadCurrentModel()
   document.addEventListener('click', closeMenu)
 })
+
+async function loadCurrentModel() {
+  try {
+    const resp = await fetch('/api/health')
+    if (resp.ok) {
+      const data = await resp.json()
+      if (data.llm_provider && data.llm_model) {
+        currentModel.value = `${data.llm_provider}/${data.llm_model}`
+      }
+    }
+  } catch {}
+}
 
 onUnmounted(() => {
   document.removeEventListener('click', closeMenu)
@@ -454,6 +469,7 @@ async function sendMessage() {
                 last.durationMs = Math.round((serverTs - last.serverTs) * 1000)
             }
             sources = event.sources || []
+            if (event.model) currentModel.value = event.model
           }
         } catch {
           // skip malformed lines
@@ -897,6 +913,14 @@ async function scrollToBottom() {
 .input-area {
   padding: 16px 24px 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.model-badge {
+  text-align: center;
+  font-size: 11px;
+  color: #555;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
 }
 
 .input-wrapper {

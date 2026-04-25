@@ -96,4 +96,4 @@ async def query_rag(
         for c in contexts
     ]
 
-    yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'ts': time.time()})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'ts': time.time(), 'model': llm.model_name()})}\n\n"

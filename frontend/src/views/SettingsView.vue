@@ -56,6 +56,31 @@
           </n-tag>
         </n-descriptions-item>
       </n-descriptions>
+
+      <div class="provider-switch">
+        <span class="switch-label">Switch provider</span>
+        <n-button-group>
+          <n-button
+            size="small"
+            :type="health.llm_provider === 'ollama' ? 'primary' : 'default'"
+            :loading="switchingProvider"
+            :disabled="health.llm_provider === 'ollama'"
+            @click="switchProvider('ollama')"
+          >
+            Ollama (Local)
+          </n-button>
+          <n-button
+            size="small"
+            :type="health.llm_provider === 'vertexai' ? 'primary' : 'default'"
+            :loading="switchingProvider"
+            :disabled="health.llm_provider === 'vertexai'"
+            @click="switchProvider('vertexai')"
+          >
+            Vertex AI
+          </n-button>
+        </n-button-group>
+        <n-tag v-if="switchError" type="error" size="small">{{ switchError }}</n-tag>
+      </div>
     </n-card>
 
     <!-- RAG Configuration -->
@@ -114,6 +139,7 @@ import {
   NDescriptionsItem,
   NTag,
   NButton,
+  NButtonGroup,
   NAlert,
 } from 'naive-ui'
 
@@ -121,6 +147,8 @@ const healthOk = ref(false)
 const healthLoading = ref(false)
 const health = ref<Record<string, any>>({})
 const stats = ref({ total_documents: 0, total_chunks: 0, total_sessions: 0, total_size: 0 })
+const switchingProvider = ref(false)
+const switchError = ref('')
 
 const serviceLabels: Record<string, string> = {
   postgres: 'PostgreSQL',
@@ -147,6 +175,28 @@ async function refreshHealth() {
     healthOk.value = false
   } finally {
     healthLoading.value = false
+  }
+}
+
+async function switchProvider(provider: string) {
+  switchingProvider.value = true
+  switchError.value = ''
+  try {
+    const resp = await fetch('/api/settings/provider', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    })
+    if (resp.ok) {
+      await refreshHealth()
+    } else {
+      const err = await resp.json()
+      switchError.value = err.detail || 'Switch failed'
+    }
+  } catch {
+    switchError.value = 'Network error'
+  } finally {
+    switchingProvider.value = false
   }
 }
 
@@ -285,5 +335,20 @@ code {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
+}
+
+.provider-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.switch-label {
+  font-size: 13px;
+  color: #888;
+  white-space: nowrap;
 }
 </style>
