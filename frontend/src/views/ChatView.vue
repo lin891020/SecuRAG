@@ -78,17 +78,28 @@
             </div>
             <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-body" />
             <div v-else>{{ msg.content }}</div>
-            <div v-if="msg.sources && msg.sources.length > 0" class="sources">
-              <n-tag
-                v-for="(src, i) in msg.sources"
-                :key="i"
-                size="small"
-                type="info"
-                :bordered="false"
-              >
-                📄 {{ src.filename }}
-                <template v-if="src.page_number"> p.{{ src.page_number }}</template>
-              </n-tag>
+            <div v-if="msg.role === 'assistant' && msg.content" class="message-actions">
+              <button class="action-btn" @click="copyMessage(msg.content, idx)">
+                {{ copiedIdx === idx ? '✓ Copied' : '⎘ Copy' }}
+              </button>
+            </div>
+            <div v-if="msg.sources && msg.sources.length > 0" class="sources-section">
+              <button class="sources-toggle" @click="toggleSources(idx)">
+                📄 {{ msg.sources.length }} {{ msg.sources.length === 1 ? 'source' : 'sources' }}
+                <span class="toggle-arrow">{{ expandedSources[idx] ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="expandedSources[idx]" class="sources">
+                <n-tag
+                  v-for="(src, i) in msg.sources"
+                  :key="i"
+                  size="small"
+                  type="info"
+                  :bordered="false"
+                >
+                  📄 {{ src.filename }}
+                  <template v-if="src.page_number"> p.{{ src.page_number }}</template>
+                </n-tag>
+              </div>
             </div>
           </div>
         </div>
@@ -124,6 +135,15 @@
             class="model-select"
             @update:value="switchModel"
           />
+          <n-button
+            size="small"
+            quaternary
+            :disabled="!messages.length || isStreaming"
+            @click="exportChat"
+            title="Export conversation as Markdown"
+          >
+            ↓ Export
+          </n-button>
         </div>
         <div class="input-wrapper">
           <n-input
@@ -258,6 +278,9 @@ const modelOptions = computed(() =>
 )
 let abortController: AbortController | null = null
 
+const copiedIdx = ref<number | null>(null)
+const expandedSources = ref<Record<number, boolean>>({})
+
 function stopStreaming() {
   abortController?.abort()
 }
@@ -355,6 +378,7 @@ async function loadSessions() {
 function startNewSession() {
   currentSessionId.value = null
   messages.value = []
+  expandedSources.value = {}
 }
 
 function startRename(session: Session) {
@@ -568,6 +592,38 @@ async function sendMessage() {
     streamingContent.value = ''
     await scrollToBottom()
   }
+}
+
+function copyMessage(content: string, idx: number) {
+  navigator.clipboard.writeText(content)
+  copiedIdx.value = idx
+  setTimeout(() => { if (copiedIdx.value === idx) copiedIdx.value = null }, 2000)
+}
+
+function toggleSources(idx: number) {
+  expandedSources.value = { ...expandedSources.value, [idx]: !expandedSources.value[idx] }
+}
+
+function exportChat() {
+  if (!messages.value.length) return
+  const lines: string[] = ['# SecuRAG Chat Export\n']
+  for (const msg of messages.value) {
+    if (msg.role === 'user') {
+      lines.push(`**You:** ${msg.content}\n`)
+    } else {
+      lines.push(`**SecuRAG:** ${msg.content}\n`)
+      if (msg.sources?.length) {
+        lines.push(`*Sources: ${msg.sources.map(s => s.filename).join(', ')}*\n`)
+      }
+    }
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `secu-rag-${new Date().toISOString().split('T')[0]}.md`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function renderMarkdown(text: string): string {
@@ -881,13 +937,64 @@ async function scrollToBottom() {
   margin: 4px 0;
 }
 
+.message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message:hover .message-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ccc;
+}
+
+.sources-section {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sources-toggle {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sources-toggle:hover {
+  color: #aaa;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+}
+
 .sources {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 8px;
 }
 
 .status-steps {
@@ -974,6 +1081,8 @@ async function scrollToBottom() {
 .model-picker-row {
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
 }
 

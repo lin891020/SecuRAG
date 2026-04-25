@@ -118,6 +118,12 @@
           <span class="stat-label">Total Size</span>
         </div>
       </div>
+      <div v-if="docList.length > 0" class="doc-list">
+        <div v-for="doc in docList" :key="doc.id" class="doc-item">
+          <span class="doc-name">{{ doc.filename }}</span>
+          <span class="doc-meta">{{ doc.chunk_count }} chunks · {{ formatSize(doc.file_size) }}</span>
+        </div>
+      </div>
     </n-card>
 
     <!-- About -->
@@ -147,6 +153,8 @@ const healthOk = ref(false)
 const healthLoading = ref(false)
 const health = ref<Record<string, any>>({})
 const stats = ref({ total_documents: 0, total_chunks: 0, total_sessions: 0, total_size: 0 })
+const docList = ref<Array<{ id: string; filename: string; chunk_count: number; file_size: number }>>([])
+
 const switchingProvider = ref(false)
 const switchError = ref('')
 
@@ -209,6 +217,7 @@ async function loadStats() {
     if (docsResp.ok) {
       const data = await docsResp.json()
       const docs = data.documents || []
+      docList.value = docs
       stats.value.total_documents = docs.length
       stats.value.total_chunks = docs.reduce((sum: number, d: any) => sum + (d.chunk_count || 0), 0)
       stats.value.total_size = docs.reduce((sum: number, d: any) => sum + (d.file_size || 0), 0)
@@ -349,6 +358,36 @@ code {
 .switch-label {
   font-size: 13px;
   color: #888;
+  white-space: nowrap;
+}
+
+.doc-list {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.doc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.doc-name {
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 65%;
+}
+
+.doc-meta {
+  color: #666;
   white-space: nowrap;
 }
 </style>

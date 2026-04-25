@@ -1,241 +1,383 @@
 # SecuRAG
 
-**Enterprise Security Knowledge Base Chatbot** — A private-deployment RAG system with AI safety guardrails, built for organizations that need intelligent Q&A over their security documentation.
+> **Enterprise Security Knowledge Base Chatbot** — Ask questions about your internal security policies, compliance guides, and SOPs through a conversational AI interface. All processing runs on your own infrastructure; no data leaves your network.
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![Vue](https://img.shields.io/badge/Vue-3-green)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)
+![Vue](https://img.shields.io/badge/Vue-3-42b883?style=flat-square)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-104%20passing-brightgreen?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
-## Overview
+---
 
-SecuRAG enables security teams to upload internal documents (policies, SOPs, compliance guides) and query them through a conversational AI interface. All data stays on-premise — the LLM runs locally via Ollama, and documents are indexed in a self-hosted vector database.
+## What is SecuRAG?
 
-### Key Features
+Security teams accumulate large volumes of documentation — access control policies, incident response playbooks, OWASP guidelines, compliance frameworks — and nobody reads them. SecuRAG turns that documentation into a queryable knowledge base: upload your documents once, then ask questions in plain language and get cited answers grounded in your actual content.
 
-- **RAG-Powered Q&A** — Retrieval-Augmented Generation ensures answers are grounded in your actual documents, with source citations
-- **Multi-Turn Conversations** — Session history is injected into each prompt so the LLM understands follow-up questions in context
-- **Relevance Threshold Filtering** — Chunks with cosine distance above the configured threshold are discarded, preventing low-quality answers
-- **Real-Time Streaming** — Server-Sent Events deliver token-by-token responses with per-stage processing status and timers
-- **Stream Cancellation** — A Stop button lets users abort generation mid-stream; partial responses are saved to history
-- **AI Safety Layer (Fail-Closed)** — NVIDIA NeMo Guardrails blocks prompt injection, off-topic queries, and unsafe outputs; errors fail closed rather than open
-- **Document Management** — Upload PDF/TXT/Markdown files with automatic chunking and vector embedding
-- **Private Deployment** — Fully containerized with Docker Compose; no data leaves your infrastructure
-- **Switchable LLM Backend** — Swap between local Ollama and GCP Vertex AI with a single env variable
-- **Audit Trail** — All queries, uploads, and guardrail blocks are logged for compliance
+It is designed for **private deployment**. The LLM (Llama 3.2) runs locally via Ollama, documents are indexed in a self-hosted ChromaDB vector store, and chat history is persisted in a PostgreSQL database you control. Nothing touches an external API unless you explicitly switch to the Vertex AI backend.
+
+---
+
+## How It Works
+
+Every chat message travels through a five-stage pipeline:
+
+```
+User query
+    │
+    ▼
+① Input Guardrail (NeMo)
+    │  Blocks prompt injection & off-topic requests (fail-closed)
+    │
+    ▼
+② Retrieval (ChromaDB + Sentence-Transformers)
+    │  Embeds query → top-K cosine similarity search → distance threshold filter
+    │
+    ▼
+③ Prompt Assembly
+    │  Injects conversation history + retrieved chunks into structured prompt
+    │
+    ▼
+④ LLM Generation (Ollama / Vertex AI)
+    │  Streams tokens via SSE as they are produced
+    │
+    ▼
+⑤ Output Guardrail (pattern match)
+       Scans for system-prompt leakage / jailbreak confirmations
+```
+
+The client receives a stream of JSON events (`status`, `token`, `guardrail`, `done`) and renders them progressively — each pipeline stage displays its own timer so users know exactly what the system is doing.
+
+---
+
+## Features
+
+### RAG-Powered Q&A with Source Citations
+
+Answers are generated exclusively from chunks retrieved from your uploaded documents. The LLM is instructed to cite the source file and page number for every claim. If the knowledge base does not contain relevant information the system says so, rather than hallucinating.
+
+Retrieval uses `all-MiniLM-L6-v2` (Sentence-Transformers) for embedding and ChromaDB for vector search. A configurable cosine distance threshold (`SECURAG_RETRIEVAL_DISTANCE_THRESHOLD`, default `0.7`) discards chunks that are too loosely related before they reach the LLM, preventing low-confidence context from degrading answer quality.
+
+### Multi-Turn Conversation Memory
+
+Each chat session maintains a persistent history in PostgreSQL. Before every query the backend loads the last 6 messages (3 user/assistant turns) and prepends them to the prompt:
+
+```
+Previous conversation:
+User: What is OWASP?
+Assistant: OWASP is the Open Web Application Security Project...
+---
+Context from knowledge base:
+[Source: owasp-top10.pdf, Page 4]
+...
+User question: How many categories does it define?
+```
+
+This allows natural follow-up questions — the LLM understands pronouns and references to earlier answers without the user repeating context.
+
+### Real-Time Streaming with Per-Stage Timers
+
+Responses stream token-by-token using Server-Sent Events. The UI displays three pipeline stages as the request progresses:
+
+```
+✓  Checking input safety...      0.0s
+✓  Searching knowledge base...   0.1s
+✓  Generating response...       35.1s
+```
+
+Timers use server-side Unix timestamps (`ts`) embedded in each `status` SSE event to measure actual stage durations, avoiding the client-side batching problem where all events in a single TCP packet appear to arrive simultaneously.
+
+### Stream Cancellation
+
+A **Stop** button appears while generation is in progress. Clicking it aborts the fetch via `AbortController` on the frontend. The backend detects the client disconnect via `GeneratorExit` and persists whatever partial response was accumulated before the abort — so the conversation history remains coherent even for interrupted messages.
+
+### AI Safety — Three-Layer Model
+
+The system applies safety checks at three points, each scoped to what it can reliably do:
+
+| Layer | What it checks | Mechanism |
+|-------|---------------|-----------|
+| **Input Guardrail** | User query — blocks prompt injection and off-topic requests | NeMo Guardrails (Colang flows + LLM self-check) |
+| **Retrieval Filter** | Retrieved chunks — drops low-relevance context | Cosine distance threshold |
+| **Output Guardrail** | LLM response — catches system-prompt leakage and jailbreak confirmations | Pattern matching on high-signal phrases |
+
+The input guardrail is **fail-closed**: if NeMo throws an exception the request is blocked rather than silently allowed through. The output guardrail uses pattern matching rather than a second LLM call because NeMo's `generate_async` is a response-generation API, not an auditing API — routing an already-generated response through it triggers NeMo's own input rails on the trigger phrase, producing false positives on legitimate answers.
+
+### Document Management
+
+Upload PDF, TXT, or Markdown files through the Documents view. Each document is processed asynchronously:
+
+1. **Parsing** — PDF text is extracted page-by-page; Markdown and plain text are read directly
+2. **Chunking** — Split into overlapping chunks (LangChain `RecursiveCharacterTextSplitter`)
+3. **Embedding** — Each chunk is embedded with `all-MiniLM-L6-v2`
+4. **Indexing** — Embeddings stored in ChromaDB with metadata (filename, page number, chunk index)
+
+Document status transitions: `processing` → `ready` (or `error`). The UI polls for status changes. Documents can be deleted, which removes both the database record and all associated vectors from ChromaDB.
+
+### Switchable LLM Backend
+
+The `LLMProvider` abstraction allows swapping between backends with a single environment variable:
+
+| Provider | Model | Use case |
+|----------|-------|----------|
+| `ollama` (default) | Llama 3.2 (local) | Air-gapped / fully private deployment |
+| `vertexai` | Gemini 1.5 Flash | Cloud deployment, higher quality |
+
+Both providers implement the same `generate_stream` interface so the rest of the pipeline is unaffected by the choice.
+
+### Audit Trail
+
+Every significant event is written to the `audit_logs` table with timestamp, event type, detail payload, and client IP:
+
+- `query` — user sent a message
+- `upload` — document uploaded and indexed
+- `delete_document` — document removed
+- `guardrail_block` — input was blocked by guardrails
+
+Indexed on `event_type` and `created_at` for efficient compliance reporting queries.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────┐     ┌──────────────────────────────────────────┐
-│              │     │              FastAPI Backend             │
-│   Vue 3 UI   │────▶│                                          │
-│  (Naive UI)  │ SSE │  ┌─────────┐  ┌─────────┐  ┌─────────┐   │
-│              │◀────│  │ NeMo    │  │   RAG   │  │  Audit  │   │
-└──────────────┘     │  │Guardrail│  │Pipeline │  │  Logger │   │
-                     │  └────┬────┘  └────┬────┘  └─────────┘   │
-                     │       │            │                     │
-                     └───────┼────────────┼─────────────────────┘
-                             │            │
-                  ┌──────────┼────────────┼──────────┐
-                  │          ▼            ▼          │
-                  │   ┌──────────┐  ┌──────────┐     │
-                  │   │  Ollama  │  │ ChromaDB │     │
-                  │   │  (LLM)   │  │ (Vectors)│     │
-                  │   └──────────┘  └──────────┘     │
-                  │        ┌──────────┐              │
-                  │        │PostgreSQL│              │ 
-                  │        │  (Data)  │              │
-                  │        └──────────┘              │
-                  │         Docker Compose           │
-                  └──────────────────────────────────┘
+┌─────────────────────┐
+│      Vue 3 UI        │  Naive UI · Markdown-it · AbortController
+│  (localhost:3000)    │
+└────────┬────────────┘
+         │  HTTP / SSE
+         ▼
+┌─────────────────────────────────────────────────────┐
+│                  FastAPI Backend (localhost:8000)     │
+│                                                      │
+│  ┌──────────────┐  ┌─────────────┐  ┌────────────┐  │
+│  │ NeMo         │  │ RAG         │  │ Audit      │  │
+│  │ Guardrails   │  │ Pipeline    │  │ Service    │  │
+│  │ (input check)│  │ (SSE stream)│  │ (logging)  │  │
+│  └──────┬───────┘  └──────┬──────┘  └────────────┘  │
+│         │                 │                          │
+└─────────┼─────────────────┼──────────────────────────┘
+          │                 │
+   ┌──────┴──────┐   ┌──────┴──────┐
+   │   Ollama    │   │  ChromaDB   │
+   │  (LLM)      │   │  (Vectors)  │
+   └─────────────┘   └─────────────┘
+                            │
+                   ┌────────┴────────┐
+                   │   PostgreSQL    │
+                   │  (sessions,     │
+                   │   messages,     │
+                   │   audit logs)   │
+                   └─────────────────┘
+          ▲─────────────── All services run in Docker Compose ───────────────▲
 ```
+
+---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Vue 3, Naive UI, Markdown-it |
-| Backend | FastAPI, SQLAlchemy 2.0 (async), Alembic |
-| RAG | LangChain, Sentence-Transformers (`all-MiniLM-L6-v2`) |
-| Vector Store | ChromaDB |
-| LLM | Ollama (Llama 3.2) / GCP Vertex AI (Gemini 1.5 Flash) |
-| Safety | NVIDIA NeMo Guardrails |
-| Database | PostgreSQL 16 |
-| Deployment | Docker Compose |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Frontend | Vue 3, Naive UI | Composition API, `<script setup>` |
+| Backend | FastAPI, SQLAlchemy 2.0 async | Async throughout; Alembic for migrations |
+| Embeddings | Sentence-Transformers `all-MiniLM-L6-v2` | Runs in-process, no GPU required |
+| Vector Store | ChromaDB | Persistent local volume |
+| LLM | Ollama (Llama 3.2) / GCP Vertex AI | Swappable via env var |
+| Safety | NVIDIA NeMo Guardrails | Colang flows + LLM self-check |
+| Database | PostgreSQL 16 | Chat history, documents, audit logs |
+| Deployment | Docker Compose | Single `make up` to start everything |
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (v4.0+)
-- ~4 GB free disk space (for LLM model download)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) 4.0+
+- ~4 GB free disk space (Llama 3.2 model)
 
 ### Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/lin891020/SecuRAG.git
 cd SecuRAG
 
-# Copy environment config
-cp .env.example .env
+cp .env.example .env   # review defaults, no edits required for local use
 
-# Build and start all services
-make build
-make up
-
-# Download the LLM model (first time only, ~2 GB)
-make pull-model
-
-# Verify everything is running
-make ps
+make build             # build Docker images (~5 min first time)
+make up                # start all services
+make pull-model        # download Llama 3.2 (~2 GB, first time only)
+make ps                # verify all containers are running
 ```
 
-### Access the Application
+Open **http://localhost:3000** in your browser.
 
-| Service | URL |
-|---------|-----|
-| **Web UI** | http://localhost:3000 |
-| **API Docs** | http://localhost:8000/docs |
-| **Health Check** | http://localhost:8000/api/health |
+### First Steps
 
-### Usage
+1. Go to **Documents** → upload one or more PDF/TXT/Markdown files
+2. Wait for status to show `ready` (embedding runs in the background)
+3. Go to **Chat** → ask a question about the uploaded content
+4. The AI responds with cited sources; ask follow-up questions naturally
 
-1. Navigate to **Documents** in the sidebar
-2. Upload security documents (PDF, TXT, or Markdown)
-3. Wait for status to change to `ready`
-4. Switch to **Chat** and start asking questions
-5. The AI will answer based on your uploaded documents, with source citations
-6. Ask follow-up questions — the LLM remembers the last 3 turns within each session
-7. Click **Stop** at any time to abort generation; the partial response is saved
+---
 
-## Project Structure
+## Configuration
+
+All settings are environment variables in `.env`. The full list is in [`.env.example`](.env.example).
+
+### Core Settings
+
+```bash
+# LLM backend: "ollama" (default, fully local) or "vertexai"
+SECURAG_LLM_PROVIDER=ollama
+
+# Cosine distance cutoff for retrieval (0 = perfect match, 1 = unrelated)
+# Raise this to be more permissive; lower it to require tighter relevance
+SECURAG_RETRIEVAL_DISTANCE_THRESHOLD=0.7
+
+# NeMo Guardrails on/off
+SECURAG_GUARDRAILS_ENABLED=true
+```
+
+### Switching to Vertex AI
+
+```bash
+SECURAG_LLM_PROVIDER=vertexai
+SECURAG_GCP_PROJECT=your-project-id
+SECURAG_GCP_REGION=us-central1
+SECURAG_VERTEXAI_MODEL=gemini-1.5-flash
+```
+
+Ensure `GOOGLE_APPLICATION_CREDENTIALS` or Application Default Credentials are configured in the backend container.
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+make test
+# or directly:
+docker compose exec backend python -m pytest tests/ -v
+```
+
+The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **104 tests, 0 failures**.
+
+### Project Structure
 
 ```
 SecuRAG/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # FastAPI route handlers
-│   │   ├── guardrails/       # NeMo Guardrails config & service
-│   │   ├── llm/              # LLM provider abstraction (Ollama / Vertex AI)
-│   │   ├── models/           # SQLAlchemy ORM models
-│   │   ├── rag/              # RAG pipeline (embeddings, splitter, retriever)
-│   │   ├── schemas/          # Pydantic request/response schemas
-│   │   ├── services/         # Business logic layer
-│   │   └── utils/            # File parsers (PDF, TXT, MD)
-│   ├── alembic/              # Database migrations
-│   ├── tests/                # pytest unit & integration tests (103 tests)
-│   ├── Dockerfile
+│   │   ├── api/              # Route handlers: chat.py, documents.py, health.py
+│   │   ├── guardrails/       # NeMo guard wrapper + Colang config
+│   │   │   └── config/       # config.yml, rails.co, prompts.yml
+│   │   ├── llm/              # LLMProvider base class, Ollama + VertexAI impls
+│   │   ├── models/           # SQLAlchemy ORM: ChatSession, ChatMessage, Document, AuditLog
+│   │   ├── rag/              # Embedder, splitter, ChromaDB retriever
+│   │   ├── schemas/          # Pydantic request/response models
+│   │   ├── services/         # rag_pipeline.py (SSE orchestration), audit_service.py
+│   │   └── utils/            # File parsers: PDF (PyMuPDF), TXT, Markdown
+│   ├── alembic/              # DB migrations (001 initial schema, 002 indexes)
+│   ├── tests/                # pytest — one file per module
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
-│   │   ├── views/            # ChatView, DocumentsView, SettingsView
-│   │   ├── router/           # Vue Router config
+│   │   ├── views/            # ChatView.vue, DocumentsView.vue, SettingsView.vue
+│   │   ├── router/           # Vue Router
 │   │   └── styles/           # Global CSS
-│   ├── Dockerfile
 │   └── package.json
 ├── docker/
-│   ├── ollama/               # Model pull script
-│   └── postgres/             # DB init script
+│   ├── ollama/               # Entrypoint script: pulls model on first start
+│   └── postgres/             # init.sql
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
 ```
 
-## Configuration
-
-All configuration is done through environment variables in `.env`. See [`.env.example`](.env.example) for all available options.
-
-### Key Settings
-
-```bash
-# LLM provider: "ollama" (default) or "vertexai"
-SECURAG_LLM_PROVIDER=ollama
-
-# Cosine distance threshold for retrieval (0 = exact match, 1 = unrelated)
-# Chunks above this threshold are discarded before prompting the LLM
-SECURAG_RETRIEVAL_DISTANCE_THRESHOLD=0.7
-
-# Enable or disable NeMo Guardrails
-SECURAG_GUARDRAILS_ENABLED=true
-```
-
-### Switch to Vertex AI
-
-```bash
-# In .env
-SECURAG_LLM_PROVIDER=vertexai
-SECURAG_GCP_PROJECT=your-gcp-project
-SECURAG_GCP_REGION=us-central1
-SECURAG_VERTEXAI_MODEL=gemini-1.5-flash
-```
-
-### Disable Guardrails
-
-```bash
-SECURAG_GUARDRAILS_ENABLED=false
-```
-
-## Makefile Commands
+### Makefile Reference
 
 | Command | Description |
 |---------|-------------|
-| `make up` | Start all services |
-| `make down` | Stop all services |
-| `make build` | Build Docker images |
-| `make logs` | Tail service logs |
-| `make pull-model` | Download Ollama LLM model |
-| `make migrate` | Run database migrations |
-| `make ps` | Show service status |
-| `make shell-backend` | Open backend container shell |
-| `make test` | Run backend test suite |
+| `make up` | Start all services (detached) |
+| `make down` | Stop and remove containers |
+| `make build` | Rebuild Docker images |
+| `make logs` | Tail logs from all services |
+| `make pull-model` | Pull Llama 3.2 into the Ollama container |
+| `make migrate` | Run pending Alembic migrations |
+| `make test` | Run the backend test suite |
+| `make ps` | Show container status |
+| `make shell-backend` | Open a shell in the backend container |
 
-## Security Features
+---
 
-### NeMo Guardrails (Fail-Closed)
+## API Reference
 
-The AI safety layer protects against:
+### Endpoints
 
-- **Prompt Injection** — Detects and blocks attempts to override system instructions ("ignore previous instructions", "act as DAN", etc.)
-- **Topic Restriction** — Redirects off-topic queries back to security-related subjects
-- **Output Filtering** — Screens LLM responses for harmful content before delivery
-- **Fail-Closed Behavior** — If the guardrails service throws an exception, the request is blocked rather than silently allowed through
-
-### Retrieval Quality
-
-- **Relevance Threshold** — ChromaDB returns top-K chunks by cosine distance. Any chunk with distance > `SECURAG_RETRIEVAL_DISTANCE_THRESHOLD` (default `0.7`) is dropped before the LLM sees it, preventing hallucination from loosely-related context.
-
-### Data Privacy
-
-- All processing happens locally — no data sent to external APIs (when using Ollama)
-- Documents stored on local volumes with Docker
-- PostgreSQL stores chat history and audit logs on-premise
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/health` | Service health check |
-| `POST` | `/api/chat` | Send message (SSE streaming response) |
-| `GET` | `/api/chat/sessions` | List chat sessions |
-| `GET` | `/api/chat/sessions/{id}/messages` | Get all messages in a session |
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Liveness check — returns service status for all components |
+| `POST` | `/api/chat` | Send a message; returns an SSE stream |
+| `GET` | `/api/chat/sessions` | List the 50 most recent chat sessions |
+| `GET` | `/api/chat/sessions/{id}/messages` | All messages in a session (chronological) |
 | `PATCH` | `/api/chat/sessions/{id}` | Rename a session |
-| `DELETE` | `/api/chat/sessions/{id}` | Delete a session and its messages |
-| `GET` | `/api/documents` | List uploaded documents |
-| `POST` | `/api/documents/upload` | Upload and index a document |
-| `DELETE` | `/api/documents/{id}` | Delete a document |
+| `DELETE` | `/api/chat/sessions/{id}` | Delete session and all its messages |
+| `GET` | `/api/documents` | List all documents with status |
+| `POST` | `/api/documents/upload` | Upload and index a document (multipart/form-data) |
+| `DELETE` | `/api/documents/{id}` | Delete document and remove its vectors |
 
-### SSE Event Types
+Interactive docs available at **http://localhost:8000/docs**.
 
-The `POST /api/chat` endpoint streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events). Each `data:` line is a JSON object:
+### SSE Event Stream (`POST /api/chat`)
 
-| `type` | Payload | Description |
-|--------|---------|-------------|
-| `status` | `label`, `ts` | Pipeline stage name + server timestamp |
-| `token` | `content` | One LLM output token |
-| `guardrail` | `content` | Blocked message explanation |
-| `done` | `sources`, `ts`, `blocked?` | Final event with source citations |
+Each `data:` line in the stream is a JSON object. The sequence for a normal response:
+
+```
+data: {"type": "status",   "label": "Checking input safety...",   "ts": 1714000000.1}
+data: {"type": "status",   "label": "Searching knowledge base...", "ts": 1714000000.2}
+data: {"type": "status",   "label": "Generating response...",      "ts": 1714000000.3}
+data: {"type": "token",    "content": "Incident"}
+data: {"type": "token",    "content": " response"}
+...
+data: {"type": "done",     "sources": [...], "ts": 1714000035.4}
+```
+
+If the input guardrail blocks the request:
+
+```
+data: {"type": "status",   "label": "Checking input safety...", "ts": ...}
+data: {"type": "guardrail","content": "Request blocked by policy."}
+data: {"type": "done",     "sources": [], "blocked": true}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `status` \| `token` \| `guardrail` \| `done` |
+| `content` | string | Token text or block reason |
+| `label` | string | Human-readable stage name (status events) |
+| `ts` | float | Unix timestamp (status and done events) |
+| `sources` | array | Source citations — `filename`, `page_number`, `content_preview` |
+| `blocked` | bool | Present and `true` on done event when guardrail triggered |
+
+---
+
+## Troubleshooting
+
+**Documents not found after restarting containers**  
+ChromaDB persists data to `/data` inside its container. Ensure your `docker-compose.yml` mounts the volume at that exact path: `chroma_data:/data`. A mismatch causes data to be written to a non-persistent path and lost on restart.
+
+**"Response was filtered by security policy" on normal questions**  
+The output guardrail uses pattern matching for high-signal phrases only (system prompt leakage, jailbreak confirmations). If you see false positives, check that `SECURAG_GUARDRAILS_ENABLED` is `true` and that NeMo initialized successfully — inspect logs with `make logs`.
+
+**LLM responses are very slow**  
+Llama 3.2 on CPU can take 30–60 seconds per response. This is expected without a GPU. Switch to `SECURAG_LLM_PROVIDER=vertexai` for faster cloud inference, or run the stack on a machine with an Nvidia GPU and configure Ollama to use it.
+
+**Guardrails blocking legitimate security questions**  
+Adjust the Colang flows in `backend/app/guardrails/config/rails.co`. Add canonical examples to `define user ask about security` to help NeMo classify similar queries as allowed.
+
+---
 
 ## License
 

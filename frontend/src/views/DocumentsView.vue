@@ -69,6 +69,7 @@ import {
   NTag,
   NProgress,
   useMessage,
+  useDialog,
 } from 'naive-ui'
 import type { DataTableColumns, UploadCustomRequestOptions } from 'naive-ui'
 import {
@@ -88,6 +89,7 @@ interface DocRow {
 }
 
 const message = useMessage()
+const dialog = useDialog()
 const documents = ref<DocRow[]>([])
 const loading = ref(false)
 const uploading = ref(false)
@@ -155,7 +157,7 @@ const columns: DataTableColumns<DocRow> = [
           size: 'small',
           quaternary: true,
           type: 'error',
-          onClick: () => deleteDocument(row.id),
+          onClick: () => confirmDelete(row.id, row.filename),
         },
         { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
       )
@@ -207,6 +209,16 @@ async function handleUpload({ file }: UploadCustomRequestOptions) {
   } finally {
     uploading.value = false
   }
+}
+
+function confirmDelete(id: string, filename: string) {
+  dialog.warning({
+    title: 'Delete Document',
+    content: `Delete "${filename}" and all its chunks from the knowledge base?`,
+    positiveText: 'Delete',
+    negativeText: 'Cancel',
+    onPositiveClick: () => deleteDocument(id),
+  })
 }
 
 async function deleteDocument(id: string) {

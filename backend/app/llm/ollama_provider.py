@@ -21,6 +21,7 @@ class OllamaProvider:
                     "prompt": prompt,
                     "system": system_prompt,
                     "stream": False,
+                    "num_predict": 2048,
                 },
             )
             resp.raise_for_status()
@@ -38,6 +39,7 @@ class OllamaProvider:
                     "prompt": prompt,
                     "system": system_prompt,
                     "stream": True,
+                    "num_predict": 2048,
                 },
             ) as resp:
                 resp.raise_for_status()
