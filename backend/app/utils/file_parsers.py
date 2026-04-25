@@ -26,5 +26,5 @@ def _parse_pdf(file_path: Path) -> list[dict]:
 
 
 def _parse_text(file_path: Path) -> list[dict]:
-    text = file_path.read_text(encoding="utf-8")
+    text = file_path.read_text(encoding="utf-8", errors="replace")
     return [{"text": text, "page": None}]

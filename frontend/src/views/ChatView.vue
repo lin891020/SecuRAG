@@ -192,11 +192,11 @@
       @click.stop
     >
       <button class="menu-item" @click="startRenameById(openMenuId!); openMenuId = null">
-        <span class="menu-icon">✎</span> 重新命名
+        <span class="menu-icon">✎</span> Rename
       </button>
       <div class="menu-divider" />
       <button class="menu-item danger" @click="deleteSession(openMenuId!); openMenuId = null">
-        <span class="menu-icon">🗑</span> 刪除
+        <span class="menu-icon">🗑</span> Delete
       </button>
     </div>
   </Teleport>
