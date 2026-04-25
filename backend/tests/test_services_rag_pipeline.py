@@ -15,7 +15,7 @@ class TestBuildPrompt:
             {"filename": "doc.pdf", "page_number": 3, "text": "Context about firewalls."},
             {"filename": "guide.md", "page_number": None, "text": "More context."},
         ]
-        prompt = _build_prompt("What is a firewall?", contexts)
+        prompt = _build_prompt("What is a firewall?", contexts, history=[])
 
         assert "What is a firewall?" in prompt
         assert "Context about firewalls." in prompt
@@ -25,9 +25,22 @@ class TestBuildPrompt:
 
     def test_empty_contexts(self):
         """Should still produce a valid prompt with no context."""
-        prompt = _build_prompt("question", [])
+        prompt = _build_prompt("question", [], history=[])
         assert "question" in prompt
         assert "Context from knowledge base:" in prompt
+
+    def test_includes_history(self):
+        """Prompt should include conversation history when provided."""
+        contexts = [{"filename": "doc.pdf", "page_number": 1, "text": "Some text."}]
+        history = [
+            {"role": "user", "content": "What is OWASP?"},
+            {"role": "assistant", "content": "OWASP is the Open Web Application Security Project."},
+        ]
+        prompt = _build_prompt("How many rules does it have?", contexts, history=history)
+
+        assert "Previous conversation:" in prompt
+        assert "What is OWASP?" in prompt
+        assert "OWASP is the Open Web" in prompt
 
 
 class TestQueryRag:
@@ -77,8 +90,10 @@ class TestQueryRag:
                 events.append(event)
 
         parsed = [json.loads(e.replace("data: ", "").strip()) for e in events if e.startswith("data:")]
-        assert parsed[0]["type"] == "guardrail"
-        assert "blocked" in parsed[0]["content"].lower() or "blocked" in str(parsed[1])
+        types = [p["type"] for p in parsed]
+        assert "guardrail" in types
+        guardrail_event = next(p for p in parsed if p["type"] == "guardrail")
+        assert "blocked" in guardrail_event["content"].lower()
 
     async def test_no_documents_returns_message(self, mock_llm):
         """Should return helpful message when no documents found."""

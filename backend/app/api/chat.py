@@ -24,6 +24,7 @@ async def _stream_and_persist(
     query: str,
     llm: object,
     session_id: uuid.UUID,
+    history: list[dict],
     ip_address: str | None = None,
 ) -> AsyncIterator[str]:
     """Wrap the RAG stream to collect the full response and persist it after streaming."""
@@ -31,21 +32,24 @@ async def _stream_and_persist(
     sources: list | None = None
     was_blocked = False
 
-    async for event in query_rag(query, llm):
-        yield event
+    try:
+        async for event in query_rag(query, llm, history=history):
+            yield event
 
-        if event.startswith("data: "):
-            try:
-                data = json.loads(event[6:].strip())
-                if data.get("type") == "token":
-                    full_response += data.get("content", "")
-                elif data.get("type") == "guardrail":
-                    full_response = data.get("content", "")
-                    was_blocked = True
-                elif data.get("type") == "done":
-                    sources = data.get("sources")
-            except (json.JSONDecodeError, KeyError):
-                pass
+            if event.startswith("data: "):
+                try:
+                    data = json.loads(event[6:].strip())
+                    if data.get("type") == "token":
+                        full_response += data.get("content", "")
+                    elif data.get("type") == "guardrail":
+                        full_response = data.get("content", "")
+                        was_blocked = True
+                    elif data.get("type") == "done":
+                        sources = data.get("sources")
+                except (json.JSONDecodeError, KeyError):
+                    pass
+    except GeneratorExit:
+        pass
 
     async with async_session() as db:
         if full_response:
@@ -109,8 +113,20 @@ async def chat(
         ip_address=ip_address,
     )
 
+    # Load recent conversation history (last 6 messages = 3 turns)
+    history_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(6)
+    )
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in reversed(history_result.scalars().all())
+    ]
+
     return StreamingResponse(
-        _stream_and_persist(body.message, llm, session.id, ip_address),
+        _stream_and_persist(body.message, llm, session.id, history, ip_address),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

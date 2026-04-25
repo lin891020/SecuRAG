@@ -73,12 +73,12 @@ class TestDocumentUpload:
         assert "Unsupported file type" in resp.json()["detail"]
 
     async def test_upload_no_filename_rejected(self, client):
-        """Should reject upload with no filename."""
+        """Should reject upload with no filename (400 from our code or 422 from FastAPI multipart parsing)."""
         resp = await client.post(
             "/api/documents/upload",
             files={"file": ("", io.BytesIO(b"content"), "text/plain")},
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     async def test_upload_appears_in_list(self, client):
         """Uploaded document should appear in the documents list."""

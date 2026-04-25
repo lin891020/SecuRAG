@@ -14,8 +14,11 @@ SecuRAG enables security teams to upload internal documents (policies, SOPs, com
 ### Key Features
 
 - **RAG-Powered Q&A** — Retrieval-Augmented Generation ensures answers are grounded in your actual documents, with source citations
-- **Real-time Streaming** — Server-Sent Events deliver token-by-token responses, similar to ChatGPT
-- **AI Safety Layer** — NVIDIA NeMo Guardrails blocks prompt injection, off-topic queries, and unsafe outputs
+- **Multi-Turn Conversations** — Session history is injected into each prompt so the LLM understands follow-up questions in context
+- **Relevance Threshold Filtering** — Chunks with cosine distance above the configured threshold are discarded, preventing low-quality answers
+- **Real-Time Streaming** — Server-Sent Events deliver token-by-token responses with per-stage processing status and timers
+- **Stream Cancellation** — A Stop button lets users abort generation mid-stream; partial responses are saved to history
+- **AI Safety Layer (Fail-Closed)** — NVIDIA NeMo Guardrails blocks prompt injection, off-topic queries, and unsafe outputs; errors fail closed rather than open
 - **Document Management** — Upload PDF/TXT/Markdown files with automatic chunking and vector embedding
 - **Private Deployment** — Fully containerized with Docker Compose; no data leaves your infrastructure
 - **Switchable LLM Backend** — Swap between local Ollama and GCP Vertex AI with a single env variable
@@ -25,25 +28,25 @@ SecuRAG enables security teams to upload internal documents (policies, SOPs, com
 
 ```
 ┌──────────────┐     ┌──────────────────────────────────────────┐
-│              │     │              FastAPI Backend              │
+│              │     │              FastAPI Backend             │
 │   Vue 3 UI   │────▶│                                          │
-│  (Naive UI)  │ SSE │  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
-│              │◀────│  │ NeMo    │  │   RAG   │  │  Audit  │ │
-└──────────────┘     │  │Guardrail│  │Pipeline │  │  Logger │ │
-                     │  └────┬────┘  └────┬────┘  └─────────┘ │
+│  (Naive UI)  │ SSE │  ┌─────────┐  ┌─────────┐  ┌─────────┐   │
+│              │◀────│  │ NeMo    │  │   RAG   │  │  Audit  │   │
+└──────────────┘     │  │Guardrail│  │Pipeline │  │  Logger │   │
+                     │  └────┬────┘  └────┬────┘  └─────────┘   │
                      │       │            │                     │
                      └───────┼────────────┼─────────────────────┘
                              │            │
                   ┌──────────┼────────────┼──────────┐
                   │          ▼            ▼          │
-                  │   ┌──────────┐  ┌──────────┐    │
-                  │   │  Ollama  │  │ ChromaDB │    │
-                  │   │ (LLM)   │  │ (Vectors)│    │
-                  │   └──────────┘  └──────────┘    │
-                  │        ┌──────────┐             │
-                  │        │PostgreSQL│             │
-                  │        │  (Data)  │             │
-                  │        └──────────┘             │
+                  │   ┌──────────┐  ┌──────────┐     │
+                  │   │  Ollama  │  │ ChromaDB │     │
+                  │   │  (LLM)   │  │ (Vectors)│     │
+                  │   └──────────┘  └──────────┘     │
+                  │        ┌──────────┐              │
+                  │        │PostgreSQL│              │ 
+                  │        │  (Data)  │              │
+                  │        └──────────┘              │
                   │         Docker Compose           │
                   └──────────────────────────────────┘
 ```
@@ -104,6 +107,8 @@ make ps
 3. Wait for status to change to `ready`
 4. Switch to **Chat** and start asking questions
 5. The AI will answer based on your uploaded documents, with source citations
+6. Ask follow-up questions — the LLM remembers the last 3 turns within each session
+7. Click **Stop** at any time to abort generation; the partial response is saved
 
 ## Project Structure
 
@@ -120,6 +125,7 @@ SecuRAG/
 │   │   ├── services/         # Business logic layer
 │   │   └── utils/            # File parsers (PDF, TXT, MD)
 │   ├── alembic/              # Database migrations
+│   ├── tests/                # pytest unit & integration tests (103 tests)
 │   ├── Dockerfile
 │   └── pyproject.toml
 ├── frontend/
@@ -140,6 +146,20 @@ SecuRAG/
 ## Configuration
 
 All configuration is done through environment variables in `.env`. See [`.env.example`](.env.example) for all available options.
+
+### Key Settings
+
+```bash
+# LLM provider: "ollama" (default) or "vertexai"
+SECURAG_LLM_PROVIDER=ollama
+
+# Cosine distance threshold for retrieval (0 = exact match, 1 = unrelated)
+# Chunks above this threshold are discarded before prompting the LLM
+SECURAG_RETRIEVAL_DISTANCE_THRESHOLD=0.7
+
+# Enable or disable NeMo Guardrails
+SECURAG_GUARDRAILS_ENABLED=true
+```
 
 ### Switch to Vertex AI
 
@@ -169,16 +189,22 @@ SECURAG_GUARDRAILS_ENABLED=false
 | `make migrate` | Run database migrations |
 | `make ps` | Show service status |
 | `make shell-backend` | Open backend container shell |
+| `make test` | Run backend test suite |
 
 ## Security Features
 
-### NeMo Guardrails
+### NeMo Guardrails (Fail-Closed)
 
 The AI safety layer protects against:
 
 - **Prompt Injection** — Detects and blocks attempts to override system instructions ("ignore previous instructions", "act as DAN", etc.)
 - **Topic Restriction** — Redirects off-topic queries back to security-related subjects
 - **Output Filtering** — Screens LLM responses for harmful content before delivery
+- **Fail-Closed Behavior** — If the guardrails service throws an exception, the request is blocked rather than silently allowed through
+
+### Retrieval Quality
+
+- **Relevance Threshold** — ChromaDB returns top-K chunks by cosine distance. Any chunk with distance > `SECURAG_RETRIEVAL_DISTANCE_THRESHOLD` (default `0.7`) is dropped before the LLM sees it, preventing hallucination from loosely-related context.
 
 ### Data Privacy
 
@@ -193,9 +219,23 @@ The AI safety layer protects against:
 | `GET` | `/api/health` | Service health check |
 | `POST` | `/api/chat` | Send message (SSE streaming response) |
 | `GET` | `/api/chat/sessions` | List chat sessions |
+| `GET` | `/api/chat/sessions/{id}/messages` | Get all messages in a session |
+| `PATCH` | `/api/chat/sessions/{id}` | Rename a session |
+| `DELETE` | `/api/chat/sessions/{id}` | Delete a session and its messages |
 | `GET` | `/api/documents` | List uploaded documents |
 | `POST` | `/api/documents/upload` | Upload and index a document |
 | `DELETE` | `/api/documents/{id}` | Delete a document |
+
+### SSE Event Types
+
+The `POST /api/chat` endpoint streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events). Each `data:` line is a JSON object:
+
+| `type` | Payload | Description |
+|--------|---------|-------------|
+| `status` | `label`, `ts` | Pipeline stage name + server timestamp |
+| `token` | `content` | One LLM output token |
+| `guardrail` | `content` | Blocked message explanation |
+| `done` | `sources`, `ts`, `blocked?` | Final event with source citations |
 
 ## License
 

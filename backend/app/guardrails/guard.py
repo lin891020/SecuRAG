@@ -49,8 +49,7 @@ class GuardService:
             return (not blocked, content if blocked else "")
         except Exception as e:
             logger.error(f"Guardrails input check error: {e}")
-            # Fail open: allow the message if guardrails error
-            return True, ""
+            return False, "Safety check unavailable. Please try again."
 
     async def check_output(self, output: str) -> tuple[bool, str]:
         """Check if LLM output is allowed.
@@ -79,7 +78,7 @@ class GuardService:
             return True, output
         except Exception as e:
             logger.error(f"Guardrails output check error: {e}")
-            return True, output
+            return False, output
 
     @staticmethod
     def _is_blocked(content: str) -> bool:

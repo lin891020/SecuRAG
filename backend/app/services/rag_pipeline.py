@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import AsyncIterator
 
 from app.guardrails.guard import guard_service
@@ -16,12 +17,20 @@ Always cite which document and page your answer comes from.
 Respond in the same language as the user's question."""
 
 
-def _build_prompt(query: str, contexts: list[dict]) -> str:
+def _build_prompt(query: str, contexts: list[dict], history: list[dict]) -> str:
     context_text = "\n\n".join(
         f"[Source: {c['filename']}, Page {c['page_number']}]\n{c['text']}"
         for c in contexts
     )
-    return f"""Context from knowledge base:
+    history_text = ""
+    if history:
+        lines = "\n".join(
+            f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:500]}"
+            for m in history
+        )
+        history_text = f"Previous conversation:\n{lines}\n---\n\n"
+
+    return f"""{history_text}Context from knowledge base:
 ---
 {context_text}
 ---
@@ -34,6 +43,7 @@ Please answer based on the context above."""
 async def query_rag(
     query: str,
     llm: LLMProvider,
+    history: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     """Execute the RAG pipeline and yield SSE events.
 
@@ -41,6 +51,7 @@ async def query_rag(
     is populated as a side effect so the caller can persist the full response.
     """
     # --- Input guardrail check ---
+    yield f"data: {json.dumps({'type': 'status', 'label': 'Checking input safety...', 'ts': time.time()})}\n\n"
     allowed, blocked_msg = await guard_service.check_input(query)
     if not allowed:
         logger.warning("Guardrails blocked input: %s", query[:100])
@@ -49,6 +60,7 @@ async def query_rag(
         return
 
     # Retrieve relevant chunks (sync: embedding + ChromaDB query)
+    yield f"data: {json.dumps({'type': 'status', 'label': 'Searching knowledge base...', 'ts': time.time()})}\n\n"
     contexts = await asyncio.to_thread(retrieve, query)
 
     if not contexts:
@@ -57,9 +69,10 @@ async def query_rag(
         return
 
     # Build prompt with context
-    prompt = _build_prompt(query, contexts)
+    prompt = _build_prompt(query, contexts, history or [])
 
     # Stream LLM response
+    yield f"data: {json.dumps({'type': 'status', 'label': 'Generating response...', 'ts': time.time()})}\n\n"
     full_response = ""
     async for token in llm.generate_stream(prompt, system_prompt=SYSTEM_PROMPT):
         full_response += token
@@ -83,4 +96,4 @@ async def query_rag(
         for c in contexts
     ]
 
-    yield f"data: {json.dumps({'type': 'done', 'sources': sources})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'ts': time.time()})}\n\n"

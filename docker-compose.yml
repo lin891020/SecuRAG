@@ -50,7 +50,7 @@ services:
     ports:
       - "8100:8000"
     volumes:
-      - chroma_data:/chroma/chroma
+      - chroma_data:/data
 
   ollama:
     image: ollama/ollama:latest

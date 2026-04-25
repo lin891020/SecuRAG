@@ -68,6 +68,13 @@
             {{ msg.role === 'user' ? '👤' : '🛡' }}
           </div>
           <div class="message-content">
+            <div v-if="msg.role === 'assistant' && msg.statusSteps && msg.statusSteps.length" class="status-steps completed">
+              <div v-for="(step, i) in msg.statusSteps" :key="i" class="status-step">
+                <span class="step-check">✓</span>
+                <span class="step-label">{{ step.label }}</span>
+                <span class="step-time">{{ (step.durationMs / 1000).toFixed(1) }}s</span>
+              </div>
+            </div>
             <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)" class="markdown-body" />
             <div v-else>{{ msg.content }}</div>
             <div v-if="msg.sources && msg.sources.length > 0" class="sources">
@@ -88,8 +95,16 @@
         <div v-if="isStreaming" class="message assistant">
           <div class="message-avatar">🛡</div>
           <div class="message-content">
-            <div v-html="renderMarkdown(streamingContent)" class="markdown-body" />
-            <span class="cursor-blink">▊</span>
+            <div v-if="liveSteps.length > 0" class="status-steps">
+              <div v-for="(step, i) in liveSteps" :key="i" class="status-step" :class="{ active: step.durationMs === null }">
+                <span v-if="step.durationMs !== null" class="step-check">✓</span>
+                <span v-else class="status-dot" />
+                <span class="step-label">{{ step.label }}</span>
+                <span class="step-time">{{ stepTime(step) }}</span>
+              </div>
+            </div>
+            <div v-if="streamingContent" v-html="renderMarkdown(streamingContent)" class="markdown-body" />
+            <span v-if="streamingContent" class="cursor-blink">▊</span>
           </div>
         </div>
       </div>
@@ -106,8 +121,21 @@
             :disabled="isStreaming"
           />
           <n-button
+            v-if="isStreaming"
+            type="error"
+            @click="stopStreaming"
+            circle
+            size="large"
+            title="Stop generating"
+          >
+            <template #icon>
+              <n-icon><stop-circle-outline /></n-icon>
+            </template>
+          </n-button>
+          <n-button
+            v-else
             type="primary"
-            :disabled="!userInput.trim() || isStreaming"
+            :disabled="!userInput.trim()"
             @click="sendMessage"
             circle
             size="large"
@@ -143,7 +171,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { NButton, NInput, NIcon, NTag } from 'naive-ui'
-import { SendOutline } from '@vicons/ionicons5'
+import { SendOutline, StopCircleOutline } from '@vicons/ionicons5'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
 
@@ -181,10 +209,16 @@ interface Source {
   content_preview: string
 }
 
+interface CompletedStep {
+  label: string
+  durationMs: number
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
   sources?: Source[]
+  statusSteps?: CompletedStep[]
 }
 
 interface Session {
@@ -201,6 +235,36 @@ const sessions = ref<Session[]>([])
 const currentSessionId = ref<string | null>(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
+let abortController: AbortController | null = null
+
+function stopStreaming() {
+  abortController?.abort()
+}
+
+interface LiveStep {
+  label: string
+  startMs: number
+  serverTs: number
+  durationMs: number | null
+}
+const liveSteps = ref<LiveStep[]>([])
+const liveNow = ref(Date.now())
+let liveTimer: ReturnType<typeof setInterval> | null = null
+
+function stepTime(step: LiveStep | CompletedStep): string {
+  const ms = step.durationMs !== null ? step.durationMs : liveNow.value - (step as LiveStep).startMs
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function startTimer() {
+  liveNow.value = Date.now()
+  liveSteps.value = []
+  liveTimer = setInterval(() => { liveNow.value = Date.now() }, 100)
+}
+
+function stopTimer() {
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null }
+}
 
 const quickPrompts = [
   'What is OWASP Top 10?',
@@ -322,6 +386,8 @@ async function sendMessage() {
   userInput.value = ''
   isStreaming.value = true
   streamingContent.value = ''
+  abortController = new AbortController()
+  startTimer()
   await scrollToBottom()
 
   try {
@@ -332,6 +398,7 @@ async function sendMessage() {
         message: text,
         session_id: currentSessionId.value,
       }),
+      signal: abortController.signal,
     })
 
     if (!resp.ok) {
@@ -365,13 +432,27 @@ async function sendMessage() {
 
         try {
           const event = JSON.parse(jsonStr)
-          if (event.type === 'token') {
+          if (event.type === 'status') {
+            const serverTs: number = event.ts ?? (Date.now() / 1000)
+            if (liveSteps.value.length > 0) {
+              const last = liveSteps.value[liveSteps.value.length - 1]
+              if (last.durationMs === null)
+                last.durationMs = Math.round((serverTs - last.serverTs) * 1000)
+            }
+            liveSteps.value.push({ label: event.label, startMs: Date.now(), serverTs, durationMs: null })
+          } else if (event.type === 'token') {
             streamingContent.value += event.content
             await scrollToBottom()
           } else if (event.type === 'guardrail') {
             streamingContent.value = '⚠️ ' + event.content
             await scrollToBottom()
           } else if (event.type === 'done') {
+            const serverTs: number = event.ts ?? (Date.now() / 1000)
+            if (liveSteps.value.length > 0) {
+              const last = liveSteps.value[liveSteps.value.length - 1]
+              if (last.durationMs === null)
+                last.durationMs = Math.round((serverTs - last.serverTs) * 1000)
+            }
             sources = event.sources || []
           }
         } catch {
@@ -381,21 +462,43 @@ async function sendMessage() {
     }
 
     // Finalize message
+    const completedSteps: CompletedStep[] = liveSteps.value.map(s => ({
+      label: s.label,
+      durationMs: s.durationMs ?? (Date.now() - s.startMs),
+    }))
     messages.value.push({
       role: 'assistant',
       content: streamingContent.value,
       sources,
+      statusSteps: completedSteps,
     })
 
     // Refresh sessions list
     await loadSessions()
-  } catch (e) {
-    messages.value.push({
-      role: 'assistant',
-      content: 'Error: Failed to get response. Please check that the backend is running.',
-    })
-    console.error('Chat error:', e)
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      // User stopped streaming — push whatever was accumulated
+      if (streamingContent.value) {
+        const completedSteps: CompletedStep[] = liveSteps.value.map(s => ({
+          label: s.label,
+          durationMs: s.durationMs ?? (Date.now() - s.startMs),
+        }))
+        messages.value.push({
+          role: 'assistant',
+          content: streamingContent.value,
+          statusSteps: completedSteps,
+        })
+      }
+    } else {
+      messages.value.push({
+        role: 'assistant',
+        content: 'Error: Failed to get response. Please check that the backend is running.',
+      })
+      console.error('Chat error:', e)
+    }
   } finally {
+    stopTimer()
+    liveSteps.value = []
     isStreaming.value = false
     streamingContent.value = ''
     await scrollToBottom()
@@ -720,6 +823,65 @@ async function scrollToBottom() {
   margin-top: 12px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.status-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.status-steps.completed {
+  opacity: 0.6;
+}
+
+.status-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-step.active {
+  color: #aaa;
+}
+
+.step-check {
+  width: 14px;
+  text-align: center;
+  color: #63e2b7;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #63e2b7;
+  animation: pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+  margin: 0 3px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.step-label {
+  flex: 1;
+}
+
+.step-time {
+  color: #555;
+  min-width: 36px;
+  text-align: right;
 }
 
 .cursor-blink {

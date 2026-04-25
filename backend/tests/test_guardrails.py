@@ -84,8 +84,8 @@ class TestCheckInput:
         assert allowed is False
         assert "SecuRAG" in msg
 
-    async def test_fails_open_on_error(self):
-        """Should allow message if guardrails raise an exception."""
+    async def test_fails_closed_on_error(self):
+        """Should block message if guardrails raise an exception (fail-closed)."""
         with patch("app.guardrails.guard.settings") as mock_settings:
             mock_settings.guardrails_enabled = True
             service = GuardService()
@@ -95,8 +95,8 @@ class TestCheckInput:
         service._rails = mock_rails
 
         allowed, msg = await service.check_input("anything")
-        assert allowed is True
-        assert msg == ""
+        assert allowed is False
+        assert msg != ""
 
     async def test_allows_when_rails_init_fails(self):
         """Should allow if NeMo fails to initialize."""
@@ -140,8 +140,8 @@ class TestCheckOutput:
         assert allowed is True
         assert output == "Firewall rules should be ordered by specificity."
 
-    async def test_fails_open_on_error(self):
-        """Should pass through output if guardrails error."""
+    async def test_fails_closed_on_error(self):
+        """Should block output if guardrails error (fail-closed)."""
         with patch("app.guardrails.guard.settings") as mock_settings:
             mock_settings.guardrails_enabled = True
             service = GuardService()
@@ -151,8 +151,7 @@ class TestCheckOutput:
         service._rails = mock_rails
 
         allowed, output = await service.check_output("some text")
-        assert allowed is True
-        assert output == "some text"
+        assert allowed is False
 
 
 class TestIsBlocked:

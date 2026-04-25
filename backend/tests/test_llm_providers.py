@@ -95,7 +95,7 @@ class TestOllamaProvider:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
 
         mock_client = AsyncMock()
-        mock_client.stream.return_value = mock_resp
+        mock_client.stream = MagicMock(return_value=mock_resp)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
@@ -122,7 +122,7 @@ class TestOllamaProvider:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
 
         mock_client = AsyncMock()
-        mock_client.stream.return_value = mock_resp
+        mock_client.stream = MagicMock(return_value=mock_resp)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 

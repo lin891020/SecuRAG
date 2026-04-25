@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
+    retrieval_distance_threshold: float = 0.7
 
     # CORS
     cors_origins: str = "http://localhost:3000"  # comma-separated

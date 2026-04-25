@@ -17,10 +17,13 @@ def retrieve(query: str, top_k: int | None = None) -> list[dict]:
     if not results["documents"] or not results["documents"][0]:
         return []
 
+    threshold = settings.retrieval_distance_threshold
     chunks = []
     for i, doc_text in enumerate(results["documents"][0]):
-        metadata = results["metadatas"][0][i]
         distance = results["distances"][0][i] if results.get("distances") else None
+        if distance is not None and distance > threshold:
+            continue
+        metadata = results["metadatas"][0][i]
         chunks.append({
             "text": doc_text,
             "doc_id": metadata.get("doc_id", ""),
