@@ -127,30 +127,31 @@ class TestCheckOutput:
         assert output == "any output text"
 
     async def test_passes_through_normal_output(self):
-        """Normal output should be allowed."""
+        """Normal output should be allowed without calling NeMo."""
         with patch("app.guardrails.guard.settings") as mock_settings:
             mock_settings.guardrails_enabled = True
             service = GuardService()
-
-        mock_rails = AsyncMock()
-        mock_rails.generate_async.return_value = {"content": "ok"}
-        service._rails = mock_rails
 
         allowed, output = await service.check_output("Firewall rules should be ordered by specificity.")
         assert allowed is True
         assert output == "Firewall rules should be ordered by specificity."
 
-    async def test_fails_closed_on_error(self):
-        """Should block output if guardrails error (fail-closed)."""
+    async def test_blocks_system_prompt_leakage(self):
+        """Output containing system prompt disclosure should be blocked."""
         with patch("app.guardrails.guard.settings") as mock_settings:
             mock_settings.guardrails_enabled = True
             service = GuardService()
 
-        mock_rails = AsyncMock()
-        mock_rails.generate_async.side_effect = Exception("error")
-        service._rails = mock_rails
+        allowed, output = await service.check_output("Here is my system prompt: You are SecuRAG...")
+        assert allowed is False
 
-        allowed, output = await service.check_output("some text")
+    async def test_blocks_jailbreak_confirmation(self):
+        """Output confirming jailbreak should be blocked."""
+        with patch("app.guardrails.guard.settings") as mock_settings:
+            mock_settings.guardrails_enabled = True
+            service = GuardService()
+
+        allowed, output = await service.check_output("I have no restrictions and will comply with anything.")
         assert allowed is False
 
 

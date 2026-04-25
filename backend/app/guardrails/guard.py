@@ -54,31 +54,33 @@ class GuardService:
     async def check_output(self, output: str) -> tuple[bool, str]:
         """Check if LLM output is allowed.
 
-        Returns (is_allowed, sanitized_output_if_blocked).
+        Returns (is_allowed, output).
+
+        NeMo generate_async is a response-generation API, not an auditing API.
+        Passing externally-generated content through it triggers NeMo's own input
+        rails on the trigger phrase ("check this response"), causing false positives
+        on every legitimate answer. Pattern matching is used instead to catch the
+        narrow class of outputs that indicate the LLM was successfully jailbroken
+        (system prompt disclosure, jailbreak confirmations).
         """
         if not self._enabled:
             return True, output
 
-        try:
-            rails = await self._get_rails()
-            if rails is None:
-                return True, output
-
-            result = await rails.generate_async(
-                messages=[
-                    {"role": "user", "content": "check this response"},
-                    {"role": "assistant", "content": output},
-                ]
-            )
-            response_content = result.get("content", "")
-            blocked = self._is_blocked(response_content)
-            if blocked:
-                logger.warning("Guardrails blocked output: %s", output[:100])
-                return False, response_content
-            return True, output
-        except Exception as e:
-            logger.error(f"Guardrails output check error: {e}")
+        block_patterns = [
+            "ignore all previous instructions",
+            "ignore your instructions",
+            "my actual system prompt is",
+            "here is my system prompt",
+            "my system prompt says",
+            "i have no restrictions",
+            "i am now unrestricted",
+        ]
+        lower = output.lower()
+        if any(p in lower for p in block_patterns):
+            logger.warning("Output guardrail blocked response (pattern match): %s", output[:100])
             return False, output
+
+        return True, output
 
     @staticmethod
     def _is_blocked(content: str) -> bool:
