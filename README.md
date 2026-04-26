@@ -125,6 +125,50 @@ The `LLMProvider` abstraction allows swapping between backends with a single env
 
 Both providers implement the same `generate_stream` interface so the rest of the pipeline is unaffected by the choice.
 
+### Airflow Auto-Ingest Pipeline
+
+SecuRAG ships with an Apache Airflow DAG (`securag_auto_ingest`) that automates document ingestion from a watched folder. Drop any PDF, TXT, or Markdown file into `watched_docs/` and it will be indexed into the knowledge base automatically — no UI interaction required.
+
+The DAG runs on a 6-hour schedule and executes two tasks in sequence:
+
+| Task | What it does |
+|------|-------------|
+| `scan_watch_folder` | Queries `/api/documents` for already-ingested filenames, scans `watched_docs/`, computes the diff |
+| `ingest_new_files` | Uploads each new file to `/api/documents/upload`; fails the task if any upload errors, triggering Airflow's retry logic |
+
+Task outputs are passed between stages via **XCom** (Airflow's inter-task communication mechanism). Failed ingestions retry once after 5 minutes.
+
+The Airflow web UI is available at **http://localhost:8080** (admin / admin). DAGs can also be triggered manually from the UI without waiting for the next scheduled run.
+
+### MCP Server — Claude Desktop Integration
+
+SecuRAG exposes its knowledge base as **Model Context Protocol (MCP)** tools, allowing Claude Desktop to query your documents directly during a conversation without copy-pasting content.
+
+Three tools are registered:
+
+| Tool | Description |
+|------|-------------|
+| `list_documents` | Lists all documents currently in the knowledge base |
+| `search_knowledge_base` | Semantic search — returns the most relevant raw chunks for a query |
+| `ask_securag` | Full RAG pipeline — retrieves context and generates a cited answer via the local LLM |
+
+The MCP server runs inside the existing backend Docker container (Python 3.11 + all dependencies already present). Claude Desktop communicates with it via `docker exec`.
+
+**Setup:** add the following to `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "securag": {
+      "command": "docker",
+      "args": ["exec", "-i", "securag-backend-1", "python", "/app/mcp_server.py"]
+    }
+  }
+}
+```
+
+SecuRAG services must be running (`make up`) before starting Claude Desktop.
+
 ### Audit Trail
 
 Every significant event is written to the `audit_logs` table with timestamp, event type, detail payload, and client IP:
@@ -155,6 +199,8 @@ Indexed on `event_type` and `created_at` for efficient compliance reporting quer
 | LLM | Ollama (Llama 3.2) / GCP Vertex AI | Swappable via env var |
 | Safety | NVIDIA NeMo Guardrails | Colang flows + LLM self-check |
 | Database | PostgreSQL 16 | Chat history, documents, audit logs |
+| Pipeline Orchestration | Apache Airflow 2.9 | Scheduled auto-ingest from watched folder |
+| AI Integration | MCP (Model Context Protocol) | Exposes knowledge base as Claude Desktop tools |
 | Deployment | Docker Compose | Single `make up` to start everything |
 
 ---
@@ -240,7 +286,7 @@ The test suite covers API endpoints, RAG pipeline, guardrails service, LLM provi
 SecuRAG/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # Route handlers: chat.py, documents.py, health.py
+│   │   ├── api/              # Route handlers: chat.py, documents.py, health.py, rag.py
 │   │   ├── guardrails/       # NeMo guard wrapper + Colang config
 │   │   │   └── config/       # config.yml, rails.co, prompts.yml
 │   │   ├── llm/              # LLMProvider base class, Ollama + VertexAI impls
@@ -248,10 +294,14 @@ SecuRAG/
 │   │   ├── rag/              # Embedder, splitter, ChromaDB retriever
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── services/         # rag_pipeline.py (SSE orchestration), audit_service.py
-│   │   └── utils/            # File parsers: PDF (PyMuPDF), TXT, Markdown
+│   │   └── utils/            # File parsers: PDF, TXT, Markdown
+│   ├── mcp_server.py         # MCP server — exposes RAG tools to Claude Desktop
 │   ├── alembic/              # DB migrations (001 initial schema, 002 indexes)
 │   ├── tests/                # pytest — one file per module
 │   └── pyproject.toml
+├── dags/
+│   └── securag_auto_ingest.py  # Airflow DAG: scan watched_docs/ every 6h and ingest
+├── watched_docs/             # Drop files here for automatic ingestion
 ├── frontend/
 │   ├── src/
 │   │   ├── views/            # ChatView.vue, DocumentsView.vue, SettingsView.vue
@@ -259,6 +309,7 @@ SecuRAG/
 │   │   └── styles/           # Global CSS
 │   └── package.json
 ├── docker/
+│   ├── airflow/              # init.sh: db migrate + create admin user
 │   ├── ollama/               # Entrypoint script: pulls model on first start
 │   └── postgres/             # init.sql
 ├── docker-compose.yml
@@ -276,6 +327,7 @@ SecuRAG/
 | `make logs` | Tail logs from all services |
 | `make pull-model` | Pull Llama 3.2 into the Ollama container |
 | `make migrate` | Run pending Alembic migrations |
+| `make airflow-setup` | Create Airflow metadata DB and run initial migrations (run once) |
 | `make test` | Run the backend test suite |
 | `make ps` | Show container status |
 | `make shell-backend` | Open a shell in the backend container |
@@ -297,6 +349,8 @@ SecuRAG/
 | `GET` | `/api/documents` | List all documents with status |
 | `POST` | `/api/documents/upload` | Upload and index a document (multipart/form-data) |
 | `DELETE` | `/api/documents/{id}` | Delete document and remove its vectors |
+| `POST` | `/api/rag/search` | Semantic search — returns raw chunks without LLM generation |
+| `POST` | `/api/rag/ask` | Full RAG query — non-streaming, returns complete answer (used by MCP) |
 
 Interactive docs available at **http://localhost:8000/docs**.
 
