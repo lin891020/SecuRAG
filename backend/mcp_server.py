@@ -111,5 +111,36 @@ async def ask_securag(question: str) -> str:
     return answer
 
 
+@mcp.tool()
+async def list_documents() -> str:
+    """List all documents currently uploaded to the SecuRAG knowledge base.
+
+    Use this first to see what documents are available before searching or asking questions.
+    """
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.get(f"{BACKEND_URL}/documents")
+            resp.raise_for_status()
+        except httpx.ConnectError:
+            return "Error: SecuRAG backend is not running. Start it with `make up`."
+        except httpx.HTTPStatusError as e:
+            return f"Error: Backend returned {e.response.status_code}"
+
+        docs = resp.json().get("documents", [])
+
+    if not docs:
+        return "No documents in the knowledge base. Upload some via the SecuRAG web UI."
+
+    lines = []
+    total_chunks = 0
+    for d in docs:
+        size_kb = d.get("file_size", 0) / 1024
+        chunks = d.get("chunk_count", 0)
+        total_chunks += chunks
+        lines.append(f"- {d['filename']}  ({chunks} chunks, {size_kb:.0f} KB)")
+
+    return f"{len(docs)} documents, {total_chunks} total chunks:\n" + "\n".join(lines)
+
+
 if __name__ == "__main__":
     mcp.run()
