@@ -184,7 +184,7 @@ Indexed on `event_type` and `created_at` for efficient compliance reporting quer
 
 ## Architecture
 
-<img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/8849e19f-2ef2-4d15-9f16-869c42171acf" />
+<img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/d2bb2db9-6413-441e-94dd-cf7a94772403" />
 
 ---
 
