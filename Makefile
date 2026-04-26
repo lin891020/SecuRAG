@@ -1,4 +1,4 @@
-.PHONY: up down logs build migrate shell-backend shell-frontend pull-model
+.PHONY: up down logs build migrate shell-backend shell-frontend pull-model airflow-setup
 
 up:
 	docker compose up -d
@@ -29,3 +29,7 @@ ps:
 
 restart:
 	docker compose restart $(service)
+
+airflow-setup:
+	docker compose exec postgres psql -U securag -c "CREATE DATABASE airflow OWNER securag;" 2>/dev/null || true
+	docker compose run --rm airflow-init

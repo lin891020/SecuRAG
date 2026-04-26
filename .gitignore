@@ -46,3 +46,7 @@ htmlcov/
 # Alembic
 backend/alembic/versions/__pycache__/
 uploads_backup/
+
+# Airflow watched folder contents (keep the folder, not the files)
+watched_docs/*
+!watched_docs/.gitkeep
