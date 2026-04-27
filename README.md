@@ -20,32 +20,6 @@ It is not positioned as a production-ready enterprise product. Known gaps such a
 
 ---
 
-## Architecture
-
-```mermaid
-graph TD
-    User["Browser / Claude Desktop"]
-    FE["Frontend\nVue 3 · Nginx"]
-    BE["Backend\nFastAPI"]
-    PG["PostgreSQL\nChat history · Audit logs"]
-    CH["ChromaDB\nVector store"]
-    OL["Ollama\nLlama 3.2 (local)"]
-    VA["Vertex AI\nGemini 1.5 Flash (optional)"]
-    AF["Airflow\nAuto-ingest DAG"]
-    WD["watched_docs/"]
-
-    User -->|HTTP / SSE| FE
-    FE -->|REST + SSE| BE
-    BE -->|SQLAlchemy| PG
-    BE -->|Embeddings + Search| CH
-    BE -->|Generate| OL
-    BE -.->|Generate optional| VA
-    AF -->|POST /api/documents/upload| BE
-    WD -->|scan every 6h| AF
-```
-
----
-
 ## How It Works
 
 Every chat message travels through a five-stage pipeline:
@@ -235,6 +209,28 @@ The following are known gaps that would need to be addressed before production d
 ---
 
 ## Architecture
+
+```mermaid
+graph TD
+    User["Browser / Claude Desktop"]
+    FE["Frontend\nVue 3 · Nginx"]
+    BE["Backend\nFastAPI"]
+    PG["PostgreSQL\nChat history · Audit logs"]
+    CH["ChromaDB\nVector store"]
+    OL["Ollama\nLlama 3.2 (local)"]
+    VA["Vertex AI\nGemini 1.5 Flash (optional)"]
+    AF["Airflow\nAuto-ingest DAG"]
+    WD["watched_docs/"]
+
+    User -->|HTTP / SSE| FE
+    FE -->|REST + SSE| BE
+    BE -->|SQLAlchemy| PG
+    BE -->|Embeddings + Search| CH
+    BE -->|Generate| OL
+    BE -.->|Generate optional| VA
+    AF -->|POST /api/documents/upload| BE
+    WD -->|scan every 6h| AF
+```
 
 <img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/d2bb2db9-6413-441e-94dd-cf7a94772403" />
 
