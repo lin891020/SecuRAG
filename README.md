@@ -13,7 +13,8 @@
 ## Demo
 
 <!-- Replace with Loom / YouTube link once recorded -->
-> **[▶ Watch demo — 90s](YOUR_LINK_HERE)** — Upload a doc, ask questions with live streaming pipeline timers, then query the same knowledge base from Claude Desktop via MCP.
+> **[▶ Watch demo — 90s]([YOUR_LINK_HERE](https://github.com/user-attachments/assets/225258fb-d4fb-4e5b-97bc-cdc71c1e354f
+))** — Upload a doc, ask questions with live streaming pipeline timers, then query the same knowledge base from Claude Desktop via MCP.
 
 ---
 
