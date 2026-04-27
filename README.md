@@ -12,9 +12,17 @@
 
 ## Demo
 
-<!-- Replace with Loom / YouTube link once recorded -->
-> **[▶ Watch demo — 90s]([https://github.com/user-attachments/assets/225258fb-d4fb-4e5b-97bc-cdc71c1e354f
-])** — Upload a doc, ask questions with live streaming pipeline timers, then query the same knowledge base from Claude Desktop via MCP.
+### Demo 1 — RAG Knowledge Retrieval
+
+Upload a security document, ask questions, and watch the three-stage pipeline run in real time — input guardrail check, vector retrieval, and streaming LLM generation with per-stage timers. Includes a multi-turn follow-up and a prompt injection attempt blocked by NeMo Guardrails.
+
+<video src="https://github.com/user-attachments/assets/68e51faf-ee47-4692-ae19-9f8755d94024" controls width="100%"></video>
+
+### Demo 2 — Claude Desktop MCP Integration
+
+Query the same knowledge base directly from Claude Desktop using the `ask_securag` MCP tool — no copy-pasting, no context switching.
+
+<video src="https://github.com/user-attachments/assets/85bc3150-2fae-45f6-bb62-ef7265902a7e" controls width="100%"></video>
 
 ---
 
