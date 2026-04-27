@@ -12,9 +12,37 @@
 
 ## What is SecuRAG?
 
-Security teams accumulate large volumes of documentation — access control policies, incident response playbooks, OWASP guidelines, compliance frameworks — and nobody reads them. SecuRAG turns that documentation into a queryable knowledge base: upload your documents once, then ask questions in plain language and get cited answers grounded in your actual content.
+SecuRAG is a self-hosted RAG-based assistant for querying security documentation. Users upload security policies, SOPs, compliance guides, or internal knowledge files, then ask questions in plain language and receive cited answers grounded in the uploaded content.
 
-It is designed for **private deployment**. The LLM (Llama 3.2) runs locally via Ollama, documents are indexed in a self-hosted ChromaDB vector store, and chat history is persisted in a PostgreSQL database you control. Nothing touches an external API unless you explicitly switch to the Vertex AI backend.
+This is a portfolio project built to demonstrate end-to-end AI application engineering: document ingestion, chunking, embedding, vector search, retrieval filtering, prompt assembly, LLM streaming, source citation, multi-turn conversation, and system integration across FastAPI, PostgreSQL, ChromaDB, Vue 3, Docker Compose, Airflow, and MCP.
+
+It is not positioned as a production-ready enterprise product. Known gaps such as RBAC, document-level permissions, RAG evaluation benchmarks, and citation verification are noted in the Limitations section.
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    User["Browser / Claude Desktop"]
+    FE["Frontend\nVue 3 · Nginx"]
+    BE["Backend\nFastAPI"]
+    PG["PostgreSQL\nChat history · Audit logs"]
+    CH["ChromaDB\nVector store"]
+    OL["Ollama\nLlama 3.2 (local)"]
+    VA["Vertex AI\nGemini 1.5 Flash (optional)"]
+    AF["Airflow\nAuto-ingest DAG"]
+    WD["watched_docs/"]
+
+    User -->|HTTP / SSE| FE
+    FE -->|REST + SSE| BE
+    BE -->|SQLAlchemy| PG
+    BE -->|Embeddings + Search| CH
+    BE -->|Generate| OL
+    BE -.->|Generate optional| VA
+    AF -->|POST /api/documents/upload| BE
+    WD -->|scan every 6h| AF
+```
 
 ---
 
@@ -182,6 +210,30 @@ Indexed on `event_type` and `created_at` for efficient compliance reporting quer
 
 ---
 
+## What This Project Demonstrates
+
+This project is intended as an engineering portfolio piece, not a commercial product. It demonstrates the ability to build and integrate a complete AI-powered system:
+
+- **RAG pipeline implementation** — document parsing, chunking strategy, embedding, vector search, distance threshold filtering, prompt assembly, citation metadata, and no-answer handling when retrieval confidence is low
+- **Backend system integration** — FastAPI service with PostgreSQL (chat history, audit logs), ChromaDB (vector store), and Ollama/Vertex AI (LLM) running together under Docker Compose
+- **Frontend engineering** — Vue 3 chat interface with SSE streaming, per-stage pipeline timers, generation cancellation via AbortController, and document management
+- **Security-aware design** — local LLM deployment for data privacy, NeMo Guardrails for input validation, output pattern matching, and PostgreSQL audit logging
+- **System extensibility** — Airflow DAG for scheduled document auto-ingestion, MCP server exposing RAG tools to Claude Desktop and other agent frameworks, pluggable LLM backend (Ollama ↔ Vertex AI) via a common interface
+
+---
+
+## Current Limitations
+
+The following are known gaps that would need to be addressed before production deployment:
+
+- **No RBAC or document-level permissions** — all authenticated users share the same knowledge base; per-user or per-role document access is not implemented
+- **No RAG evaluation benchmark** — retrieval quality and answer faithfulness are not measured systematically; adding RAGAS or a similar framework would make quality regressions detectable
+- **Citation verification** — the LLM is instructed to cite sources but there is no programmatic check that cited chunks actually support the generated claims
+- **Document prompt-injection defense** — malicious content embedded in uploaded documents (e.g. instructions hidden in a PDF) is not sanitized before being injected into the prompt context
+- **No document governance** — there is no versioning, approval workflow, or access-controlled upload; any user can add or delete documents
+
+---
+
 ## Architecture
 
 <img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/d2bb2db9-6413-441e-94dd-cf7a94772403" />
@@ -294,7 +346,7 @@ SecuRAG/
 │   │   ├── rag/              # Embedder, splitter, ChromaDB retriever
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── services/         # rag_pipeline.py (SSE orchestration), audit_service.py
-│   │   └── utils/            # constants.py (SSE/doc status), request.py (get_client_ip), sse.py (parse_sse_event), file parsers
+│   │   └── utils/            # constants.py (SSE/doc status), request.py (get_client_ip), sse.py (parse_sse_event — used by mcp_server.py to consume the /api/chat SSE stream), file parsers
 │   ├── mcp_server.py         # MCP server — exposes RAG tools to Claude Desktop
 │   ├── alembic/              # DB migrations (001 initial schema, 002 indexes)
 │   ├── tests/                # pytest — one file per module
@@ -394,7 +446,7 @@ data: {"type": "done",     "sources": [], "blocked": true}
 ChromaDB persists data to `/data` inside its container. Ensure your `docker-compose.yml` mounts the volume at that exact path: `chroma_data:/data`. A mismatch causes data to be written to a non-persistent path and lost on restart.
 
 **"Response was filtered by security policy" on normal questions**  
-The output guardrail uses pattern matching for high-signal phrases only (system prompt leakage, jailbreak confirmations). If you see false positives, check that `SECURAG_GUARDRAILS_ENABLED` is `true` and that NeMo initialized successfully — inspect logs with `make logs`.
+The output guardrail uses pattern matching for high-signal phrases only (system prompt leakage, jailbreak confirmations). If you see false positives, adjust the regex patterns in the output guardrail, or relax the conditions in `backend/app/guardrails/config/rails.co`. The issue is overly strict pattern matching, not a NeMo initialization failure.
 
 **LLM responses are very slow**  
 Llama 3.2 on CPU can take 30–60 seconds per response. This is expected without a GPU. Switch to `SECURAG_LLM_PROVIDER=vertexai` for faster cloud inference, or run the stack on a machine with an Nvidia GPU and configure Ollama to use it.
