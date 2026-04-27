@@ -7,6 +7,7 @@ from typing import AsyncIterator
 from app.guardrails.guard import guard_service
 from app.llm.base import LLMProvider
 from app.rag.retriever import retrieve
+from app.utils.constants import SSE_DONE, SSE_GUARDRAIL, SSE_STATUS, SSE_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -45,44 +46,41 @@ async def query_rag(
     llm: LLMProvider,
     history: list[dict] | None = None,
 ) -> AsyncIterator[str]:
-    """Execute the RAG pipeline and yield SSE events.
-
-    Returns an async iterator of SSE events. The final_response list
-    is populated as a side effect so the caller can persist the full response.
-    """
+    """Execute the RAG pipeline and yield SSE events."""
     # --- Input guardrail check ---
-    yield f"data: {json.dumps({'type': 'status', 'label': 'Checking input safety...', 'ts': time.time()})}\n\n"
+    yield f"data: {json.dumps({'type': SSE_STATUS, 'label': 'Checking input safety...', 'ts': time.time()})}\n\n"
     allowed, blocked_msg = await guard_service.check_input(query)
     if not allowed:
         logger.warning("Guardrails blocked input: %s", query[:100])
-        yield f"data: {json.dumps({'type': 'guardrail', 'content': blocked_msg})}\n\n"
-        yield f"data: {json.dumps({'type': 'done', 'sources': [], 'blocked': True})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'content': blocked_msg})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_DONE, 'sources': [], 'blocked': True})}\n\n"
         return
 
     # Retrieve relevant chunks (sync: embedding + ChromaDB query)
-    yield f"data: {json.dumps({'type': 'status', 'label': 'Searching knowledge base...', 'ts': time.time()})}\n\n"
+    yield f"data: {json.dumps({'type': SSE_STATUS, 'label': 'Searching knowledge base...', 'ts': time.time()})}\n\n"
     contexts = await asyncio.to_thread(retrieve, query)
 
     if not contexts:
-        yield f"data: {json.dumps({'type': 'token', 'content': 'No relevant documents found in the knowledge base. Please upload documents first.'})}\n\n"
-        yield f"data: {json.dumps({'type': 'done', 'sources': []})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_TOKEN, 'content': 'No relevant documents found in the knowledge base. Please upload documents first.'})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_DONE, 'sources': []})}\n\n"
         return
 
     # Build prompt with context
     prompt = _build_prompt(query, contexts, history or [])
 
     # Stream LLM response
-    yield f"data: {json.dumps({'type': 'status', 'label': 'Generating response...', 'ts': time.time()})}\n\n"
-    full_response = ""
+    yield f"data: {json.dumps({'type': SSE_STATUS, 'label': 'Generating response...', 'ts': time.time()})}\n\n"
+    tokens: list[str] = []
     async for token in llm.generate_stream(prompt, system_prompt=SYSTEM_PROMPT):
-        full_response += token
-        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        tokens.append(token)
+        yield f"data: {json.dumps({'type': SSE_TOKEN, 'content': token})}\n\n"
+    full_response = "".join(tokens)
 
     # --- Output guardrail check ---
     output_allowed, sanitized = await guard_service.check_output(full_response)
     if not output_allowed:
         logger.warning("Guardrails blocked output for query: %s", query[:100])
-        yield f"data: {json.dumps({'type': 'guardrail', 'content': 'Response was filtered by security policy.'})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'content': 'Response was filtered by security policy.'})}\n\n"
 
     # Build source references
     sources = [
@@ -96,4 +94,4 @@ async def query_rag(
         for c in contexts
     ]
 
-    yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'ts': time.time(), 'model': llm.model_name()})}\n\n"
+    yield f"data: {json.dumps({'type': SSE_DONE, 'sources': sources, 'ts': time.time(), 'model': llm.model_name()})}\n\n"

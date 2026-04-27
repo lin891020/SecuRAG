@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import chromadb
 
 from app.config import settings
-from typing import Optional
 
-_client: Optional[chromadb.HttpClient] = None
+_client: chromadb.HttpClient | None = None
 
 
 def get_chroma_client() -> chromadb.HttpClient:

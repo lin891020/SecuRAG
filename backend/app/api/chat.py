@@ -1,4 +1,3 @@
-import json
 import logging
 import uuid
 from typing import AsyncIterator
@@ -15,6 +14,9 @@ from app.models.chat import ChatMessage, ChatSession
 from app.schemas.chat import ChatMessageResponse, ChatRequest, ChatSessionRenameRequest, ChatSessionResponse
 from app.services.audit_service import log_event
 from app.services.rag_pipeline import query_rag
+from app.utils.constants import SSE_DONE, SSE_GUARDRAIL, SSE_TOKEN
+from app.utils.request import get_client_ip
+from app.utils.sse import parse_sse_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,29 +30,27 @@ async def _stream_and_persist(
     ip_address: str | None = None,
 ) -> AsyncIterator[str]:
     """Wrap the RAG stream to collect the full response and persist it after streaming."""
-    full_response = ""
-    sources: list | None = None
+    tokens: list[str] = []
+    sources: list[dict] | None = None
     was_blocked = False
 
     try:
         async for event in query_rag(query, llm, history=history):
             yield event
 
-            if event.startswith("data: "):
-                try:
-                    data = json.loads(event[6:].strip())
-                    if data.get("type") == "token":
-                        full_response += data.get("content", "")
-                    elif data.get("type") == "guardrail":
-                        full_response = data.get("content", "")
-                        was_blocked = True
-                    elif data.get("type") == "done":
-                        sources = data.get("sources")
-                except (json.JSONDecodeError, KeyError):
-                    pass
+            data = parse_sse_event(event)
+            if data is not None:
+                if data.get("type") == SSE_TOKEN:
+                    tokens.append(data.get("content", ""))
+                elif data.get("type") == SSE_GUARDRAIL:
+                    tokens = [data.get("content", "")]
+                    was_blocked = True
+                elif data.get("type") == SSE_DONE:
+                    sources = data.get("sources")
     except GeneratorExit:
         pass
 
+    full_response = "".join(tokens)
     async with async_session() as db:
         if full_response:
             try:
@@ -84,7 +84,7 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     llm = request.app.state.llm_provider
-    ip_address = request.client.host if request.client else None
+    ip_address = get_client_ip(request)
 
     # Create or retrieve session
     if body.session_id:

@@ -1,6 +1,10 @@
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings as app_settings
 from app.llm.ollama_provider import OllamaProvider
@@ -27,8 +31,9 @@ async def list_models():
             data = resp.json()
         models = [m["name"] for m in data.get("models", [])]
         return {"models": models}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
+    except Exception:
+        logger.exception("Cannot reach Ollama at %s", app_settings.ollama_base_url)
+        raise HTTPException(status_code=503, detail="LLM service is currently unavailable")
 
 
 @router.patch("/model")

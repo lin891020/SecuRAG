@@ -10,7 +10,7 @@ services:
       postgres:
         condition: service_healthy
       chromadb:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads
@@ -51,6 +51,12 @@ services:
       - "8100:8000"
     volumes:
       - chroma_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   ollama:
     image: ollama/ollama:latest
@@ -90,6 +96,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__SECRET_KEY: securag-dev-secret
+      SECURAG_BACKEND_URL: "http://backend:8000/api"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./watched_docs:/watched_docs
@@ -104,6 +111,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://securag:securag@postgres/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      SECURAG_BACKEND_URL: "http://backend:8000/api"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./watched_docs:/watched_docs

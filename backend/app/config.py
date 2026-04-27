@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     retrieval_distance_threshold: float = 0.7
 
+    # Uploads
+    upload_dir: str = "/app/uploads"
+
     # CORS
     cors_origins: str = "http://localhost:3000"  # comma-separated
 

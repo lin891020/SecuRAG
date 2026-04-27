@@ -148,6 +148,8 @@ import {
   NButtonGroup,
   NAlert,
 } from 'naive-ui'
+import { apiFetch, apiPatch, API } from '../utils/api'
+import { formatSize } from '../utils/format'
 
 const healthOk = ref(false)
 const healthLoading = ref(false)
@@ -172,13 +174,8 @@ onMounted(() => {
 async function refreshHealth() {
   healthLoading.value = true
   try {
-    const resp = await fetch('/api/health')
-    if (resp.ok) {
-      health.value = await resp.json()
-      healthOk.value = true
-    } else {
-      healthOk.value = false
-    }
+    health.value = await apiFetch<Record<string, any>>(API.HEALTH)
+    healthOk.value = true
   } catch {
     healthOk.value = false
   } finally {
@@ -190,19 +187,10 @@ async function switchProvider(provider: string) {
   switchingProvider.value = true
   switchError.value = ''
   try {
-    const resp = await fetch('/api/settings/provider', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider }),
-    })
-    if (resp.ok) {
-      await refreshHealth()
-    } else {
-      const err = await resp.json()
-      switchError.value = err.detail || 'Switch failed'
-    }
-  } catch {
-    switchError.value = 'Network error'
+    await apiPatch(API.SETTINGS_PROVIDER, { provider })
+    await refreshHealth()
+  } catch (e: any) {
+    switchError.value = e.message || 'Switch failed'
   } finally {
     switchingProvider.value = false
   }
@@ -210,33 +198,21 @@ async function switchProvider(provider: string) {
 
 async function loadStats() {
   try {
-    const [docsResp, sessionsResp] = await Promise.all([
-      fetch('/api/documents'),
-      fetch('/api/chat/sessions'),
+    const [docsData, sessions] = await Promise.all([
+      apiFetch<{ documents: typeof docList.value }>(API.DOCUMENTS),
+      apiFetch<any[]>(API.CHAT_SESSIONS),
     ])
-    if (docsResp.ok) {
-      const data = await docsResp.json()
-      const docs = data.documents || []
-      docList.value = docs
-      stats.value.total_documents = docs.length
-      stats.value.total_chunks = docs.reduce((sum: number, d: any) => sum + (d.chunk_count || 0), 0)
-      stats.value.total_size = docs.reduce((sum: number, d: any) => sum + (d.file_size || 0), 0)
-    }
-    if (sessionsResp.ok) {
-      const sessions = await sessionsResp.json()
-      stats.value.total_sessions = sessions.length
-    }
+    const docs = docsData.documents || []
+    docList.value = docs
+    stats.value.total_documents = docs.length
+    stats.value.total_chunks = docs.reduce((sum: number, d: any) => sum + (d.chunk_count || 0), 0)
+    stats.value.total_size = docs.reduce((sum: number, d: any) => sum + (d.file_size || 0), 0)
+    stats.value.total_sessions = sessions.length
   } catch {
     // stats are non-critical
   }
 }
 
-function formatSize(bytes: number): string {
-  if (!bytes) return '0 B'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
 </script>
 
 <style scoped>

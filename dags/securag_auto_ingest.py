@@ -66,7 +66,7 @@ def ingest_new_files(**context):
                 )
                 resp.raise_for_status()
             print(f"Ingested: {path.name}")
-        except Exception as exc:
+        except (requests.RequestException, OSError) as exc:
             print(f"Failed to ingest {path.name}: {exc}")
             failed.append(path.name)
 

@@ -77,6 +77,8 @@ import {
   DocumentTextOutline,
   TrashOutline,
 } from '@vicons/ionicons5'
+import { apiFetch, apiDelete, API } from '../utils/api'
+import { formatSize } from '../utils/format'
 
 interface DocRow {
   id: string
@@ -172,12 +174,9 @@ onMounted(() => {
 async function loadDocuments() {
   loading.value = true
   try {
-    const resp = await fetch('/api/documents')
-    if (resp.ok) {
-      const data = await resp.json()
-      documents.value = data.documents
-    }
-  } catch (e) {
+    const data = await apiFetch<{ documents: DocRow[] }>(API.DOCUMENTS)
+    documents.value = data.documents
+  } catch {
     message.error('Failed to load documents')
   } finally {
     loading.value = false
@@ -192,16 +191,11 @@ async function handleUpload({ file }: UploadCustomRequestOptions) {
   formData.append('file', file.file)
 
   try {
-    const resp = await fetch('/api/documents/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
+    const resp = await fetch(API.DOCUMENTS_UPLOAD, { method: 'POST', body: formData })
     if (!resp.ok) {
-      const err = await resp.json()
-      throw new Error(err.detail || 'Upload failed')
+      const err = await resp.json().catch(() => ({}))
+      throw new Error((err as any).detail || 'Upload failed')
     }
-
     message.success(`"${file.name}" uploaded and indexed successfully`)
     await loadDocuments()
   } catch (e: any) {
@@ -223,22 +217,12 @@ function confirmDelete(id: string, filename: string) {
 
 async function deleteDocument(id: string) {
   try {
-    const resp = await fetch(`/api/documents/${id}`, { method: 'DELETE' })
-    if (resp.ok) {
-      message.success('Document deleted')
-      await loadDocuments()
-    } else {
-      message.error('Failed to delete document')
-    }
+    await apiDelete(API.DOCUMENT(id))
+    message.success('Document deleted')
+    await loadDocuments()
   } catch {
     message.error('Failed to delete document')
   }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 </script>
 

@@ -208,6 +208,7 @@ import { NButton, NInput, NIcon, NTag, NSelect } from 'naive-ui'
 import { SendOutline, StopCircleOutline } from '@vicons/ionicons5'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
+import { apiFetch, apiPatch, apiDelete, API } from '../utils/api'
 
 const renamingSessionId = ref<string | null>(null)
 const renameValue = ref('')
@@ -326,20 +327,14 @@ onMounted(() => {
 async function loadModels() {
   modelsLoading.value = true
   try {
-    const [healthResp, modelsResp] = await Promise.all([
-      fetch('/api/health'),
-      fetch('/api/settings/models'),
+    const [health, modelsData] = await Promise.all([
+      apiFetch<Record<string, any>>(API.HEALTH),
+      apiFetch<{ models: string[] }>(API.SETTINGS_MODELS),
     ])
-    if (healthResp.ok) {
-      const data = await healthResp.json()
-      selectedModel.value = data.llm_model || ''
-    }
-    if (modelsResp.ok) {
-      const data = await modelsResp.json()
-      availableModels.value = data.models || []
-      if (!selectedModel.value && availableModels.value.length > 0) {
-        selectedModel.value = availableModels.value[0]
-      }
+    selectedModel.value = health.llm_model || ''
+    availableModels.value = modelsData.models || []
+    if (!selectedModel.value && availableModels.value.length > 0) {
+      selectedModel.value = availableModels.value[0]
     }
   } catch {}
   finally {
@@ -349,11 +344,7 @@ async function loadModels() {
 
 async function switchModel(model: string) {
   try {
-    await fetch('/api/settings/model', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model }),
-    })
+    await apiPatch(API.SETTINGS_MODEL, { model })
     selectedModel.value = model
   } catch (e) {
     console.error('Failed to switch model:', e)
@@ -366,10 +357,7 @@ onUnmounted(() => {
 
 async function loadSessions() {
   try {
-    const resp = await fetch('/api/chat/sessions')
-    if (resp.ok) {
-      sessions.value = await resp.json()
-    }
+    sessions.value = await apiFetch<Session[]>(API.CHAT_SESSIONS)
   } catch (e) {
     console.error('Failed to load sessions:', e)
   }
@@ -396,16 +384,9 @@ async function confirmRename(sessionId: string) {
   const title = renameValue.value.trim()
   if (!title) return cancelRename()
   try {
-    const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    })
-    if (resp.ok) {
-      const updated = await resp.json()
-      const idx = sessions.value.findIndex(s => s.id === sessionId)
-      if (idx !== -1) sessions.value[idx].title = updated.title
-    }
+    const updated = await apiPatch<Session>(API.CHAT_SESSION(sessionId), { title })
+    const idx = sessions.value.findIndex(s => s.id === sessionId)
+    if (idx !== -1) sessions.value[idx].title = updated.title
   } catch (e) {
     console.error('Rename failed:', e)
   } finally {
@@ -415,13 +396,11 @@ async function confirmRename(sessionId: string) {
 
 async function deleteSession(sessionId: string) {
   try {
-    const resp = await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' })
-    if (resp.ok) {
-      sessions.value = sessions.value.filter(s => s.id !== sessionId)
-      if (currentSessionId.value === sessionId) {
-        currentSessionId.value = null
-        messages.value = []
-      }
+    await apiDelete(API.CHAT_SESSION(sessionId))
+    sessions.value = sessions.value.filter((s: Session) => s.id !== sessionId)
+    if (currentSessionId.value === sessionId) {
+      currentSessionId.value = null
+      messages.value = []
     }
   } catch (e) {
     console.error('Delete failed:', e)
@@ -433,16 +412,13 @@ async function switchSession(sessionId: string) {
   messages.value = []
 
   try {
-    const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`)
-    if (resp.ok) {
-      const data = await resp.json()
-      messages.value = data.map((m: any) => ({
-        role: m.role,
-        content: m.content,
-        sources: m.sources || undefined,
-      }))
-      await scrollToBottom()
-    }
+    const data = await apiFetch<any[]>(API.CHAT_SESSION_MESSAGES(sessionId))
+    messages.value = data.map((m: any) => ({
+      role: m.role,
+      content: m.content,
+      sources: m.sources || undefined,
+    }))
+    await scrollToBottom()
   } catch (e) {
     console.error('Failed to load session messages:', e)
   }
@@ -474,7 +450,7 @@ async function sendMessage() {
   await scrollToBottom()
 
   try {
-    const resp = await fetch('/api/chat', {
+    const resp = await fetch(API.CHAT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -495,7 +471,8 @@ async function sendMessage() {
     }
 
     // Read SSE stream
-    const reader = resp.body!.getReader()
+    if (!resp.body) throw new Error('SSE stream unavailable')
+    const reader = resp.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let sources: Source[] = []

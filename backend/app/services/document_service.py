@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
 from app.rag.embeddings import embed_texts
+from app.utils.constants import DOC_STATUS_ERROR, DOC_STATUS_PROCESSING, DOC_STATUS_READY
 from app.rag.splitter import split_pages
 from app.rag.vectorstore import add_chunks, delete_document_chunks
 from app.utils.file_parsers import parse_file
@@ -27,7 +28,7 @@ async def ingest_document(
         filename=filename,
         file_type=file_type,
         file_size=file_size,
-        status="processing",
+        status=DOC_STATUS_PROCESSING,
     )
     db.add(doc)
     await db.commit()
@@ -40,7 +41,7 @@ async def ingest_document(
         chunks = await asyncio.to_thread(split_pages, pages)
 
         if not chunks:
-            doc.status = "error"
+            doc.status = DOC_STATUS_ERROR
             doc.chunk_count = 0
             await db.commit()
             return doc
@@ -61,12 +62,12 @@ async def ingest_document(
 
         # Update document status
         doc.chunk_count = len(chunks)
-        doc.status = "ready"
+        doc.status = DOC_STATUS_READY
         await db.commit()
         await db.refresh(doc)
 
     except Exception as e:
-        doc.status = "error"
+        doc.status = DOC_STATUS_ERROR
         await db.commit()
         raise e
 

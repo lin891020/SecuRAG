@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.schemas.document import DocumentListResponse, DocumentResponse
 from app.services.audit_service import log_event
@@ -13,11 +14,12 @@ from app.services.document_service import (
     ingest_document,
     list_documents,
 )
+from app.utils.request import get_client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-UPLOAD_DIR = Path("/app/uploads")
+UPLOAD_DIR = Path(settings.upload_dir)
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
@@ -57,7 +59,7 @@ async def upload_document(
     file_path = UPLOAD_DIR / f"{uuid.uuid4()}{suffix}"
     file_path.write_bytes(content)
 
-    ip_address = request.client.host if request.client else None
+    ip_address = get_client_ip(request)
     try:
         doc = await ingest_document(
             db=db,
@@ -91,6 +93,6 @@ async def remove_document(
         db,
         event_type="delete",
         detail={"doc_id": str(doc_id)},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
     return {"message": "Document deleted"}

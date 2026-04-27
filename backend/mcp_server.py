@@ -29,6 +29,20 @@ BACKEND_URL = os.getenv("SECURAG_BACKEND_URL", "http://localhost:8000/api")
 mcp = FastMCP("SecuRAG")
 
 
+async def _backend_request(
+    method: str, path: str, *, timeout: float = 30, **kwargs
+) -> httpx.Response | str:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            resp = await getattr(client, method)(f"{BACKEND_URL}{path}", **kwargs)
+            resp.raise_for_status()
+            return resp
+        except httpx.ConnectError:
+            return "Error: SecuRAG backend is not running. Start it with `make up`."
+        except httpx.HTTPStatusError as e:
+            return f"Error: Backend returned {e.response.status_code}"
+
+
 @mcp.tool()
 async def search_knowledge_base(query: str, top_k: int = 5) -> str:
     """Search the SecuRAG knowledge base and return relevant document chunks.
@@ -40,21 +54,13 @@ async def search_knowledge_base(query: str, top_k: int = 5) -> str:
         query: The search query or topic to look up.
         top_k: Number of chunks to return (default 5, max 20).
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            resp = await client.post(
-                f"{BACKEND_URL}/rag/search",
-                json={"query": query, "top_k": min(top_k, 20)},
-            )
-            resp.raise_for_status()
-        except httpx.ConnectError:
-            return "Error: SecuRAG backend is not running. Start it with `make up`."
-        except httpx.HTTPStatusError as e:
-            return f"Error: Backend returned {e.response.status_code}"
+    result = await _backend_request(
+        "post", "/rag/search", json={"query": query, "top_k": min(top_k, 20)}
+    )
+    if isinstance(result, str):
+        return result
 
-        data = resp.json()
-        chunks = data.get("chunks", [])
-
+    chunks = result.json().get("chunks", [])
     if not chunks:
         return "No relevant documents found for this query."
 
@@ -77,20 +83,13 @@ async def ask_securag(question: str) -> str:
     Args:
         question: The security question to answer.
     """
-    async with httpx.AsyncClient(timeout=180) as client:
-        try:
-            resp = await client.post(
-                f"{BACKEND_URL}/rag/ask",
-                json={"question": question},
-            )
-            resp.raise_for_status()
-        except httpx.ConnectError:
-            return "Error: SecuRAG backend is not running. Start it with `make up`."
-        except httpx.HTTPStatusError as e:
-            return f"Error: Backend returned {e.response.status_code}"
+    result = await _backend_request(
+        "post", "/rag/ask", json={"question": question}, timeout=180
+    )
+    if isinstance(result, str):
+        return result
 
-        data = resp.json()
-
+    data = result.json()
     answer = data.get("answer", "").strip()
     sources = data.get("sources", [])
 
@@ -117,17 +116,11 @@ async def list_documents() -> str:
 
     Use this first to see what documents are available before searching or asking questions.
     """
-    async with httpx.AsyncClient(timeout=15) as client:
-        try:
-            resp = await client.get(f"{BACKEND_URL}/documents")
-            resp.raise_for_status()
-        except httpx.ConnectError:
-            return "Error: SecuRAG backend is not running. Start it with `make up`."
-        except httpx.HTTPStatusError as e:
-            return f"Error: Backend returned {e.response.status_code}"
+    result = await _backend_request("get", "/documents", timeout=15)
+    if isinstance(result, str):
+        return result
 
-        docs = resp.json().get("documents", [])
-
+    docs = result.json().get("documents", [])
     if not docs:
         return "No documents in the knowledge base. Upload some via the SecuRAG web UI."
 

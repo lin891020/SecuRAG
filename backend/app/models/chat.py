@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,5 +26,5 @@ class ChatMessage(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_sessions.id"))
     role: Mapped[str] = mapped_column(String(20))  # user, assistant
     content: Mapped[str] = mapped_column(Text)
-    sources: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    sources: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

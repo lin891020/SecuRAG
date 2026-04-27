@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-104%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-109%20passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
 ---
@@ -278,7 +278,7 @@ make test
 docker compose exec backend python -m pytest tests/ -v
 ```
 
-The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **104 tests, 0 failures**.
+The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **109 tests, 0 failures**.
 
 ### Project Structure
 
@@ -294,7 +294,7 @@ SecuRAG/
 │   │   ├── rag/              # Embedder, splitter, ChromaDB retriever
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── services/         # rag_pipeline.py (SSE orchestration), audit_service.py
-│   │   └── utils/            # File parsers: PDF, TXT, Markdown
+│   │   └── utils/            # constants.py (SSE/doc status), request.py (get_client_ip), sse.py (parse_sse_event), file parsers
 │   ├── mcp_server.py         # MCP server — exposes RAG tools to Claude Desktop
 │   ├── alembic/              # DB migrations (001 initial schema, 002 indexes)
 │   ├── tests/                # pytest — one file per module
@@ -305,6 +305,7 @@ SecuRAG/
 ├── frontend/
 │   ├── src/
 │   │   ├── views/            # ChatView.vue, DocumentsView.vue, SettingsView.vue
+│   │   ├── utils/            # api.ts (shared fetch helpers + API constants), format.ts (formatSize)
 │   │   ├── router/           # Vue Router
 │   │   └── styles/           # Global CSS
 │   └── package.json

@@ -1,11 +1,12 @@
 import asyncio
-import json
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.rag.retriever import retrieve
 from app.services.rag_pipeline import query_rag
+from app.utils.constants import SSE_DONE, SSE_GUARDRAIL, SSE_TOKEN
+from app.utils.sse import parse_sse_event
 
 router = APIRouter()
 
@@ -28,21 +29,18 @@ async def search_knowledge_base(body: SearchRequest):
 @router.post("/ask")
 async def ask_securag(request: Request, body: AskRequest):
     llm = request.app.state.llm_provider
-    full_response = ""
-    sources: list = []
+    tokens: list[str] = []
+    sources: list[dict] = []
 
     async for event in query_rag(body.question, llm):
-        if not event.startswith("data: "):
+        data = parse_sse_event(event)
+        if data is None:
             continue
-        try:
-            data = json.loads(event[6:].strip())
-            if data.get("type") == "token":
-                full_response += data.get("content", "")
-            elif data.get("type") == "guardrail":
-                full_response = data.get("content", "")
-            elif data.get("type") == "done":
-                sources = data.get("sources", [])
-        except (json.JSONDecodeError, KeyError):
-            pass
+        if data.get("type") == SSE_TOKEN:
+            tokens.append(data.get("content", ""))
+        elif data.get("type") == SSE_GUARDRAIL:
+            tokens = [data.get("content", "")]
+        elif data.get("type") == SSE_DONE:
+            sources = data.get("sources", [])
 
-    return {"answer": full_response, "sources": sources}
+    return {"answer": "".join(tokens), "sources": sources}

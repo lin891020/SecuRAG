@@ -5,6 +5,7 @@ from sqlalchemy import ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.utils.constants import DOC_STATUS_PROCESSING
 
 
 class Document(Base):
@@ -15,9 +16,7 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(10))  # pdf, txt, md
     file_size: Mapped[int]
     chunk_count: Mapped[int] = mapped_column(default=0)
-    status: Mapped[str] = mapped_column(
-        String(20), default="processing"
-    )  # processing, ready, error
+    status: Mapped[str] = mapped_column(String(20), default=DOC_STATUS_PROCESSING)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
