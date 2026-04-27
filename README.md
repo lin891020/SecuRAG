@@ -10,6 +10,13 @@
 
 ---
 
+## Demo
+
+<!-- Replace with Loom / YouTube link once recorded -->
+> **[▶ Watch demo — 90s](YOUR_LINK_HERE)** — Upload a doc, ask questions with live streaming pipeline timers, then query the same knowledge base from Claude Desktop via MCP.
+
+---
+
 ## What is SecuRAG?
 
 SecuRAG is a self-hosted RAG-based assistant for querying security documentation. Users upload security policies, SOPs, compliance guides, or internal knowledge files, then ask questions in plain language and receive cited answers grounded in the uploaded content.
@@ -17,6 +24,34 @@ SecuRAG is a self-hosted RAG-based assistant for querying security documentation
 This is a portfolio project built to demonstrate end-to-end AI application engineering: document ingestion, chunking, embedding, vector search, retrieval filtering, prompt assembly, LLM streaming, source citation, multi-turn conversation, and system integration across FastAPI, PostgreSQL, ChromaDB, Vue 3, Docker Compose, Airflow, and MCP.
 
 It is not positioned as a production-ready enterprise product. Known gaps such as RBAC, document-level permissions, RAG evaluation benchmarks, and citation verification are noted in the Limitations section.
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    User["Browser / Claude Desktop"]
+    FE["Frontend\nVue 3 · Nginx"]
+    BE["Backend\nFastAPI"]
+    PG["PostgreSQL\nChat history · Audit logs"]
+    CH["ChromaDB\nVector store"]
+    OL["Ollama\nLlama 3.2 (local)"]
+    VA["Vertex AI\nGemini 1.5 Flash (optional)"]
+    AF["Airflow\nAuto-ingest DAG"]
+    WD["watched_docs/"]
+
+    User -->|HTTP / SSE| FE
+    FE -->|REST + SSE| BE
+    BE -->|SQLAlchemy| PG
+    BE -->|Embeddings + Search| CH
+    BE -->|Generate| OL
+    BE -.->|Generate optional| VA
+    AF -->|POST /api/documents/upload| BE
+    WD -->|scan every 6h| AF
+```
+
+<img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/d2bb2db9-6413-441e-94dd-cf7a94772403" />
 
 ---
 
@@ -205,34 +240,6 @@ The following are known gaps that would need to be addressed before production d
 - **Citation verification** — the LLM is instructed to cite sources but there is no programmatic check that cited chunks actually support the generated claims
 - **Document prompt-injection defense** — malicious content embedded in uploaded documents (e.g. instructions hidden in a PDF) is not sanitized before being injected into the prompt context
 - **No document governance** — there is no versioning, approval workflow, or access-controlled upload; any user can add or delete documents
-
----
-
-## Architecture
-
-```mermaid
-graph TD
-    User["Browser / Claude Desktop"]
-    FE["Frontend\nVue 3 · Nginx"]
-    BE["Backend\nFastAPI"]
-    PG["PostgreSQL\nChat history · Audit logs"]
-    CH["ChromaDB\nVector store"]
-    OL["Ollama\nLlama 3.2 (local)"]
-    VA["Vertex AI\nGemini 1.5 Flash (optional)"]
-    AF["Airflow\nAuto-ingest DAG"]
-    WD["watched_docs/"]
-
-    User -->|HTTP / SSE| FE
-    FE -->|REST + SSE| BE
-    BE -->|SQLAlchemy| PG
-    BE -->|Embeddings + Search| CH
-    BE -->|Generate| OL
-    BE -.->|Generate optional| VA
-    AF -->|POST /api/documents/upload| BE
-    WD -->|scan every 6h| AF
-```
-
-<img width="1672" height="941" alt="SecuRAG" src="https://github.com/user-attachments/assets/d2bb2db9-6413-441e-94dd-cf7a94772403" />
 
 ---
 
