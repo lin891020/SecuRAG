@@ -184,7 +184,7 @@ The DAG runs on a 6-hour schedule and executes two tasks in sequence:
 
 Task outputs are passed between stages via **XCom** (Airflow's inter-task communication mechanism). Failed ingestions retry once after 5 minutes.
 
-The Airflow web UI is available at **http://localhost:8080** (admin / admin). DAGs can also be triggered manually from the UI without waiting for the next scheduled run.
+The Airflow web UI is available at **http://airflow.securag.test** (admin / admin), or **http://localhost:8313**. DAGs can also be triggered manually from the UI without waiting for the next scheduled run.
 
 ### MCP Server — Claude Desktop Integration
 
@@ -274,6 +274,9 @@ The following are known gaps that would need to be addressed before production d
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) 4.0+
+- [Ollama](https://ollama.com) running on the host (`ollama serve`, port 11434) — SecuRAG connects
+  to it via `host.docker.internal` rather than running its own container, so the model is shared
+  with anything else on the machine that uses Ollama
 - ~4 GB free disk space (Llama 3.2 model)
 
 ### Quick Start
@@ -286,11 +289,12 @@ cp .env.example .env   # review defaults, no edits required for local use
 
 make build             # build Docker images (~5 min first time)
 make up                # start all services
-make pull-model        # download Llama 3.2 (~2 GB, first time only)
+make pull-model        # download Llama 3.2 into the host Ollama (~2 GB, first time only)
 make ps                # verify all containers are running
 ```
 
-Open **http://localhost:3000** in your browser.
+Open **http://securag.test** in your browser (or **http://localhost:8311** — both work;
+the friendly name is served by the local Caddy on port 80, see `~/Projects/Caddyfile`).
 
 ### First Steps
 
@@ -375,7 +379,7 @@ SecuRAG/
 │   └── package.json
 ├── docker/
 │   ├── airflow/              # init.sh: db migrate + create admin user
-│   ├── ollama/               # Entrypoint script: pulls model on first start
+│   ├── ollama/               # Legacy model-pull script (Ollama now runs on the host)
 │   └── postgres/             # init.sql
 ├── docker-compose.yml
 ├── Makefile
@@ -390,7 +394,7 @@ SecuRAG/
 | `make down` | Stop and remove containers |
 | `make build` | Rebuild Docker images |
 | `make logs` | Tail logs from all services |
-| `make pull-model` | Pull Llama 3.2 into the Ollama container |
+| `make pull-model` | Pull Llama 3.2 into the host Ollama |
 | `make migrate` | Run pending Alembic migrations |
 | `make airflow-setup` | Create Airflow metadata DB and run initial migrations (run once) |
 | `make test` | Run the backend test suite |
@@ -417,7 +421,7 @@ SecuRAG/
 | `POST` | `/api/rag/search` | Semantic search — returns raw chunks without LLM generation |
 | `POST` | `/api/rag/ask` | Full RAG query — non-streaming, returns complete answer (used by MCP) |
 
-Interactive docs available at **http://localhost:8000/docs**.
+Interactive docs available at **http://api.securag.test/docs** (or **http://localhost:8310/docs**).
 
 ### SSE Event Stream (`POST /api/chat`)
 

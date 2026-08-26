@@ -24,7 +24,7 @@ import os
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-BACKEND_URL = os.getenv("SECURAG_BACKEND_URL", "http://localhost:8000/api")
+BACKEND_URL = os.getenv("SECURAG_BACKEND_URL", "http://localhost:8310/api")
 
 mcp = FastMCP("SecuRAG")
 

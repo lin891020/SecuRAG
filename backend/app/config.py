@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     upload_dir: str = "/app/uploads"
 
     # CORS
-    cors_origins: str = "http://localhost:3000"  # comma-separated
+    cors_origins: str = "http://localhost:8311"  # comma-separated
 
     model_config = {"env_file": ".env", "env_prefix": "SECURAG_"}
 

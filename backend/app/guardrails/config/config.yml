@@ -3,7 +3,7 @@ models:
     engine: ollama
     model: llama3.2
     parameters:
-      base_url: ${SECURAG_OLLAMA_BASE_URL:-http://ollama:11434}
+      base_url: ${SECURAG_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
 
 rails:
   input:

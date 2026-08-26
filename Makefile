@@ -22,7 +22,7 @@ shell-frontend:
 	docker compose exec frontend sh
 
 pull-model:
-	docker compose exec ollama ollama pull llama3.2
+	ollama pull llama3.2
 
 ps:
 	docker compose ps
