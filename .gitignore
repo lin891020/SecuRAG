@@ -50,3 +50,9 @@ uploads_backup/
 # Airflow watched folder contents (keep the folder, not the files)
 watched_docs/*
 !watched_docs/.gitkeep
+
+# Demo build artefacts — narration wavs, listen-back records, finished videos.
+# The videos are hosted as GitHub attachments, not committed; the .srt files
+# next to them are.
+docs/demo/build/
+docs/demo/*.mp4

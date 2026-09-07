@@ -1,0 +1,27 @@
+1
+00:00:00,000 --> 00:00:03,133
+The same knowledge base, from Claude Desktop.
+
+2
+00:00:02,733 --> 00:00:10,733
+SecuRAG exposes itself as an MCP server, so any MCP client
+can use it. Here it is in the connector list.
+
+3
+00:00:11,333 --> 00:00:15,532
+One question, in plain language, addressed to the
+knowledge base.
+
+4
+00:00:15,132 --> 00:00:20,663
+Claude discovers the tools the server offers, then calls
+ask_securag with the question.
+
+5
+00:00:20,263 --> 00:00:26,252
+The answer comes back through the same local retrieval
+pipeline — no copy-pasting between windows.
+
+6
+00:00:25,852 --> 00:00:28,612
+One knowledge base, two front ends.
