@@ -12,17 +12,19 @@
 
 ## Demo
 
+*Both clips are narrated and subtitled — sound on, or read the band under the picture.*
+
 ### Demo 1 — RAG Knowledge Retrieval
 
 Upload a security document, ask questions, and watch the three-stage pipeline run in real time — input guardrail check, vector retrieval, and streaming LLM generation with per-stage timers. Includes a multi-turn follow-up and a prompt injection attempt — the input guardrail passes it, and the model declines it anyway.
 
-<video src="https://github.com/user-attachments/assets/039b4fe6-3b8e-4f27-8411-cdb19b4defab" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/d8efbfea-d3d7-411d-906d-0bd1296a7c14" controls width="100%"></video>
 
 ### Demo 2 — Claude Desktop MCP Integration
 
 Query the same knowledge base directly from Claude Desktop using the `ask_securag` MCP tool — no copy-pasting, no context switching.
 
-<video src="https://github.com/user-attachments/assets/8e708d9f-c5f3-44fb-862e-49d679e5d265" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/36499f2c-5f6e-41e1-8722-eada8319fcb2" controls width="100%"></video>
 
 ---
 
