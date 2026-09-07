@@ -249,6 +249,7 @@ The following are known gaps that would need to be addressed before production d
 - **No RBAC or document-level permissions** — all authenticated users share the same knowledge base; per-user or per-role document access is not implemented
 - **No RAG evaluation benchmark** — retrieval quality and answer faithfulness are not measured systematically; adding RAGAS or a similar framework would make quality regressions detectable
 - **Citation verification** — the LLM is instructed to cite sources but there is no programmatic check that cited chunks actually support the generated claims
+- **Direct prompt injection is not reliably blocked** — the input guardrail is an LLM self-check against Colang flows, and it passes phrasings those flows do not cover. The first demo above shows one: all three pipeline stages run, so the request reached the model and was declined there rather than at the rail. A model that refuses is a second layer, not a substitute for the first, and nothing here measures how much the rails actually catch — a labelled set of injection attempts scored against them is the missing piece
 - **Document prompt-injection defense** — malicious content embedded in uploaded documents (e.g. instructions hidden in a PDF) is not sanitized before being injected into the prompt context
 - **No document governance** — there is no versioning, approval workflow, or access-controlled upload; any user can add or delete documents
 
