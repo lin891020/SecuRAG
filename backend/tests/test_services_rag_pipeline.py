@@ -138,6 +138,61 @@ class TestQueryRag:
         call_arg = mock_guard.check_output.call_args[0][0]
         assert "This is a test response." in call_arg
 
+    async def test_output_guardrail_annotates_rather_than_retracts(self, mock_llm):
+        """A flagged answer still reaches the client, tagged `stage: output`.
+
+        The output rail runs on the finished response, so by the time it fires
+        the answer has been read. Everything downstream keys off `stage` to
+        tell that apart from an input block, which really does stand in for the
+        answer -- and while both rails shared one untagged event, an output
+        flag replaced the answer on screen and in the stored transcript.
+        """
+        mock_contexts = [
+            {
+                "text": "Some content.",
+                "doc_id": "d1",
+                "filename": "f.pdf",
+                "chunk_index": 0,
+                "page_number": 1,
+                "distance": 0.1,
+            },
+        ]
+
+        with patch("app.services.rag_pipeline.guard_service") as mock_guard, \
+             patch("app.services.rag_pipeline.retrieve", return_value=mock_contexts):
+
+            mock_guard.check_input = AsyncMock(return_value=(True, ""))
+            mock_guard.check_output = AsyncMock(return_value=(False, "leaked"))
+
+            events = [json.loads(e.removeprefix("data: ").strip())
+                      async for e in query_rag("test", mock_llm)]
+
+        # the answer was streamed and is still there
+        tokens = "".join(e["content"] for e in events if e["type"] == "token")
+        assert "This is a test response." in tokens
+
+        guardrail = [e for e in events if e["type"] == "guardrail"]
+        assert len(guardrail) == 1
+        assert guardrail[0]["stage"] == "output"
+        # and it arrives after the tokens, not instead of them
+        assert events.index(guardrail[0]) > max(
+            i for i, e in enumerate(events) if e["type"] == "token"
+        )
+        # the stream still completes normally, with its sources
+        assert events[-1]["type"] == "done"
+        assert events[-1]["sources"]
+
+    async def test_input_block_is_tagged_as_input(self, mock_llm):
+        with patch("app.services.rag_pipeline.guard_service") as mock_guard:
+            mock_guard.check_input = AsyncMock(return_value=(False, "blocked"))
+            events = [json.loads(e.removeprefix("data: ").strip())
+                      async for e in query_rag("test", mock_llm)]
+
+        guardrail = [e for e in events if e["type"] == "guardrail"]
+        assert len(guardrail) == 1
+        assert guardrail[0]["stage"] == "input"
+        assert not [e for e in events if e["type"] == "token"]
+
 
 class TestQueryRagSourceFormat:
     async def test_source_content_preview_truncated(self, mock_llm):

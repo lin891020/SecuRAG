@@ -14,7 +14,12 @@ from app.models.chat import ChatMessage, ChatSession
 from app.schemas.chat import ChatMessageResponse, ChatRequest, ChatSessionRenameRequest, ChatSessionResponse
 from app.services.audit_service import log_event
 from app.services.rag_pipeline import query_rag
-from app.utils.constants import SSE_DONE, SSE_GUARDRAIL, SSE_TOKEN
+from app.utils.constants import (
+    GUARDRAIL_OUTPUT,
+    SSE_DONE,
+    SSE_GUARDRAIL,
+    SSE_TOKEN,
+)
 from app.utils.request import get_client_ip
 from app.utils.sse import parse_sse_event
 
@@ -33,6 +38,7 @@ async def _stream_and_persist(
     tokens: list[str] = []
     sources: list[dict] | None = None
     was_blocked = False
+    was_flagged = False
 
     try:
         async for event in query_rag(query, llm, history=history):
@@ -43,8 +49,16 @@ async def _stream_and_persist(
                 if data.get("type") == SSE_TOKEN:
                     tokens.append(data.get("content", ""))
                 elif data.get("type") == SSE_GUARDRAIL:
-                    tokens = [data.get("content", "")]
-                    was_blocked = True
+                    # The output rail runs after the answer has streamed, so its
+                    # message annotates a response the user has already read.
+                    # Substituting it here -- which is what happened while both
+                    # rails shared one event -- stored a transcript that did not
+                    # match the screen, and fed that transcript back as history.
+                    if data.get("stage") == GUARDRAIL_OUTPUT:
+                        was_flagged = True
+                    else:
+                        tokens = [data.get("content", "")]
+                        was_blocked = True
                 elif data.get("type") == SSE_DONE:
                     sources = data.get("sources")
     except GeneratorExit:
@@ -65,16 +79,16 @@ async def _stream_and_persist(
             except Exception:
                 logger.exception("Failed to persist assistant message")
 
-        if was_blocked:
+        if was_blocked or was_flagged:
             try:
                 await log_event(
                     db,
-                    event_type="guardrail_block",
+                    event_type="guardrail_block" if was_blocked else "guardrail_flag",
                     detail={"query": query[:200], "session_id": str(session_id)},
                     ip_address=ip_address,
                 )
             except Exception:
-                logger.exception("Failed to log guardrail block event")
+                logger.exception("Failed to log guardrail event")
 
 
 @router.post("")

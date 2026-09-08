@@ -1,4 +1,4 @@
-.PHONY: up down logs build migrate shell-backend shell-frontend pull-model airflow-setup
+.PHONY: up down logs build migrate test shell-backend shell-frontend pull-model airflow-setup
 
 up:
 	docker compose up -d
@@ -14,6 +14,12 @@ build:
 
 migrate:
 	docker compose exec backend alembic upgrade head
+
+# --no-deps because the suite mocks its way past Postgres and ChromaDB: it
+# needs the image, not the stack, and requiring `make up` first is how a
+# documented command stays unrun.
+test:
+	docker compose run --rm --no-deps backend python -m pytest tests/ -v
 
 shell-backend:
 	docker compose exec backend bash

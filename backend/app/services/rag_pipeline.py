@@ -7,7 +7,14 @@ from typing import AsyncIterator
 from app.guardrails.guard import guard_service
 from app.llm.base import LLMProvider
 from app.rag.retriever import retrieve
-from app.utils.constants import SSE_DONE, SSE_GUARDRAIL, SSE_STATUS, SSE_TOKEN
+from app.utils.constants import (
+    GUARDRAIL_INPUT,
+    GUARDRAIL_OUTPUT,
+    SSE_DONE,
+    SSE_GUARDRAIL,
+    SSE_STATUS,
+    SSE_TOKEN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +59,7 @@ async def query_rag(
     allowed, blocked_msg = await guard_service.check_input(query)
     if not allowed:
         logger.warning("Guardrails blocked input: %s", query[:100])
-        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'content': blocked_msg})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'stage': GUARDRAIL_INPUT, 'content': blocked_msg})}\n\n"
         yield f"data: {json.dumps({'type': SSE_DONE, 'sources': [], 'blocked': True})}\n\n"
         return
 
@@ -77,10 +84,20 @@ async def query_rag(
     full_response = "".join(tokens)
 
     # --- Output guardrail check ---
-    output_allowed, sanitized = await guard_service.check_output(full_response)
+    #
+    # Detection, not interception. Every token above is already on the wire by
+    # the time this runs, so a response that trips a pattern has been read
+    # before it is flagged. Holding the tokens back until the whole answer
+    # could be checked would buy real interception and cost the streaming this
+    # UI is built around; the trade was taken deliberately and the README and
+    # the client wording both say "detected", not "blocked".
+    #
+    # The second return value is the response unchanged -- check_output does
+    # not rewrite anything -- so there is nothing here to substitute.
+    output_allowed, _ = await guard_service.check_output(full_response)
     if not output_allowed:
-        logger.warning("Guardrails blocked output for query: %s", query[:100])
-        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'content': 'Response was filtered by security policy.'})}\n\n"
+        logger.warning("Guardrails flagged output for query: %s", query[:100])
+        yield f"data: {json.dumps({'type': SSE_GUARDRAIL, 'stage': GUARDRAIL_OUTPUT, 'content': 'This response was flagged by the output filter after it was sent.'})}\n\n"
 
     # Build source references
     sources = [

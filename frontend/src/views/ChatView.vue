@@ -504,7 +504,14 @@ async function sendMessage() {
             streamingContent.value += event.content
             await scrollToBottom()
           } else if (event.type === 'guardrail') {
-            streamingContent.value = '⚠️ ' + event.content
+            // The output rail runs after the answer has streamed. Replacing the
+            // answer with its notice -- which is what happened while both rails
+            // sent the same event -- erased text the reader had already seen.
+            if (event.stage === 'output') {
+              streamingContent.value += '\n\n⚠️ ' + event.content
+            } else {
+              streamingContent.value = '⚠️ ' + event.content
+            }
             await scrollToBottom()
           } else if (event.type === 'done') {
             const serverTs: number = event.ts ?? (Date.now() / 1000)

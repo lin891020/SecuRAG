@@ -16,7 +16,7 @@
 
 ### Demo 1 — RAG Knowledge Retrieval
 
-Upload a security document, ask questions, and watch the three-stage pipeline run in real time — input guardrail check, vector retrieval, and streaming LLM generation with per-stage timers. Includes a multi-turn follow-up and a prompt injection attempt — the input guardrail passes it, and the model declines it anyway.
+Upload a security document, ask questions, and watch the pipeline run in real time — the three stages that report a timer are the input guardrail check, vector retrieval, and streaming LLM generation. Includes a multi-turn follow-up and a prompt injection attempt — the input guardrail passes it, and the model declines it anyway.
 
 <video src="https://github.com/user-attachments/assets/aad43a41-7fd5-4171-904b-cc918b1ab689" controls width="100%"></video>
 
@@ -90,8 +90,10 @@ User query
     │  Streams tokens via SSE as they are produced
     │
     ▼
-⑤ Output Guardrail (pattern match)
-       Scans for system-prompt leakage / jailbreak confirmations
+⑤ Output Guardrail (pattern match, post-hoc)
+       Scans the finished answer for system-prompt leakage / jailbreak
+       confirmations. Runs after the tokens have streamed — it flags and
+       audits, it does not intercept
 ```
 
 The client receives a stream of JSON events (`status`, `token`, `guardrail`, `done`) and renders them progressively — each pipeline stage displays its own timer so users know exactly what the system is doing.
@@ -125,7 +127,7 @@ This allows natural follow-up questions — the LLM understands pronouns and ref
 
 ### Real-Time Streaming with Per-Stage Timers
 
-Responses stream token-by-token using Server-Sent Events. The UI displays three pipeline stages as the request progresses:
+Responses stream token-by-token using Server-Sent Events. Three of the five pipeline stages announce themselves and are timed — prompt assembly is too fast to be worth a row, and the output guardrail runs after the answer has already arrived:
 
 ```
 ✓  Checking input safety...      0.0s
@@ -147,9 +149,13 @@ The system applies safety checks at three points, each scoped to what it can rel
 |-------|---------------|-----------|
 | **Input Guardrail** | User query — blocks prompt injection and off-topic requests | NeMo Guardrails (Colang flows + LLM self-check) |
 | **Retrieval Filter** | Retrieved chunks — drops low-relevance context | Cosine distance threshold |
-| **Output Guardrail** | LLM response — catches system-prompt leakage and jailbreak confirmations | Pattern matching on high-signal phrases |
+| **Output Guardrail** | LLM response — catches system-prompt leakage and jailbreak confirmations | Pattern matching on high-signal phrases, **after** streaming |
 
-The input guardrail is **fail-closed**: if NeMo throws an exception the request is blocked rather than silently allowed through. The output guardrail uses pattern matching rather than a second LLM call because NeMo's `generate_async` is a response-generation API, not an auditing API — routing an already-generated response through it triggers NeMo's own input rails on the trigger phrase, producing false positives on legitimate answers.
+The input guardrail is **fail-closed**: if NeMo throws an exception, or fails to initialise at all, the request is blocked rather than silently allowed through. Only an explicitly disabled rail (`SECURAG_GUARDRAILS_ENABLED=false`) lets traffic past unchecked.
+
+The output guardrail is **detection, not interception**, and the distinction matters: it runs on the finished answer, by which point every token has already been streamed to the client and read. What it produces is a warning in the transcript and an entry in the audit log, not a response the user never saw. Buffering the answer until it could be checked would make it a real gate and would cost the token-by-token streaming this UI is built around — that trade has not been taken.
+
+It uses pattern matching rather than a second LLM call because NeMo's `generate_async` is a response-generation API, not an auditing API — routing an already-generated response through it triggers NeMo's own input rails on the trigger phrase, producing false positives on legitimate answers.
 
 ### Document Management
 
@@ -221,10 +227,14 @@ SecuRAG services must be running (`make up`) before starting Claude Desktop.
 
 Every significant event is written to the `audit_logs` table with timestamp, event type, detail payload, and client IP:
 
-- `query` — user sent a message
+- `query` — a question was asked
+- `search` — the knowledge base was searched without generating an answer
 - `upload` — document uploaded and indexed
 - `delete_document` — document removed
-- `guardrail_block` — input was blocked by guardrails
+- `guardrail_block` — input was blocked by the input rail, before the model ran
+- `guardrail_flag` — output tripped the output filter after it had been streamed
+
+Both front ends are covered. Events raised by the non-streaming endpoints the MCP server calls (`/api/rag/ask`, `/api/rag/search`) carry `"source": "rag_api"` in their detail payload, so questions asked from Claude Desktop can be told apart from questions asked in the browser.
 
 Indexed on `event_type` and `created_at` for efficient compliance reporting queries.
 
@@ -353,7 +363,7 @@ make test
 docker compose exec backend python -m pytest tests/ -v
 ```
 
-The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **109 tests, 0 failures**.
+The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **116 tests, 0 failures**. It mocks Postgres, ChromaDB and the LLM, so `make test` needs the backend image but not a running stack.
 
 ### Project Structure
 
@@ -444,18 +454,27 @@ data: {"type": "token",    "content": " response"}
 data: {"type": "done",     "sources": [...], "ts": 1714000035.4}
 ```
 
-If the input guardrail blocks the request:
+If the input guardrail blocks the request, no tokens are sent at all:
 
 ```
 data: {"type": "status",   "label": "Checking input safety...", "ts": ...}
-data: {"type": "guardrail","content": "Request blocked by policy."}
+data: {"type": "guardrail","stage": "input", "content": "Request blocked by policy."}
 data: {"type": "done",     "sources": [], "blocked": true}
+```
+
+If the output guardrail flags an answer, that answer has already been streamed. The event arrives after the tokens and annotates them; it does not retract them:
+
+```
+data: {"type": "token",    "content": "..."}
+data: {"type": "guardrail","stage": "output", "content": "This response was flagged by the output filter after it was sent."}
+data: {"type": "done",     "sources": [...], "ts": ...}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | string | `status` \| `token` \| `guardrail` \| `done` |
-| `content` | string | Token text or block reason |
+| `stage` | string | `input` \| `output` — which rail raised a `guardrail` event, and therefore whether the message replaces the answer or annotates it |
+| `content` | string | Token text, block reason, or output-filter notice |
 | `label` | string | Human-readable stage name (status events) |
 | `ts` | float | Unix timestamp (status and done events) |
 | `sources` | array | Source citations — `filename`, `page_number`, `content_preview` |
@@ -468,7 +487,7 @@ data: {"type": "done",     "sources": [], "blocked": true}
 **Documents not found after restarting containers**  
 ChromaDB persists data to `/data` inside its container. Ensure your `docker-compose.yml` mounts the volume at that exact path: `chroma_data:/data`. A mismatch causes data to be written to a non-persistent path and lost on restart.
 
-**"Response was filtered by security policy" on normal questions**  
+**"This response was flagged by the output filter after it was sent" on normal questions**  
 The output guardrail uses pattern matching for high-signal phrases only (system prompt leakage, jailbreak confirmations). If you see false positives, adjust the regex patterns in the output guardrail, or relax the conditions in `backend/app/guardrails/config/rails.co`. The issue is overly strict pattern matching, not a NeMo initialization failure.
 
 **LLM responses are very slow**  
