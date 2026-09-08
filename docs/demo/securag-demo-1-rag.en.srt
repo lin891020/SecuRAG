@@ -1,56 +1,56 @@
 1
-00:00:00,500 --> 00:00:08,877
+00:00:00,500 --> 00:00:08,710
 SecuRAG answers questions about your own security
 documents. Everything runs on one machine — nothing leaves
 the network.
 
 2
-00:00:10,000 --> 00:00:17,900
+00:00:10,000 --> 00:00:18,341
 Settings shows what it is made of: Postgres, ChromaDB and
 Ollama, all local, and the retrieval parameters in the
 open.
 
 3
-00:00:18,000 --> 00:00:23,001
+00:00:18,441 --> 00:00:23,442
 A new document goes in — the NIST Cybersecurity Framework.
 
 4
-00:00:24,000 --> 00:00:29,700
+00:00:24,441 --> 00:00:30,129
 It is chunked and embedded on upload, and the table says
 when it is ready to answer.
 
 5
-00:00:31,500 --> 00:00:36,400
+00:00:31,941 --> 00:00:36,841
 The knowledge base goes from 31 chunks to 129.
 
 6
-00:00:43,000 --> 00:00:51,357
+00:00:43,441 --> 00:00:51,804
 A question runs through three visible stages, each with
 its own timer: the input is checked, the store is
 searched, the model writes.
 
 7
-00:00:51,500 --> 00:00:55,715
+00:00:51,941 --> 00:00:56,156
 The answer cites the document and the page it came from.
 
 8
-00:00:56,500 --> 00:01:01,940
+00:00:56,941 --> 00:01:02,351
 Opening a citation shows the same passage in the original
 PDF.
 
 9
-00:01:05,000 --> 00:01:13,489
+00:01:05,441 --> 00:01:13,924
 A follow-up keeps the thread: retrieval runs again over
 the same knowledge base, and the answer builds on the
 first rather than starting over.
 
 10
-00:01:22,500 --> 00:01:31,197
+00:01:22,941 --> 00:01:31,708
 A third question, on incident response, comes back with
 the specific subcategories the framework defines — each
 one cited to its page.
 
 11
-00:01:40,000 --> 00:01:46,336
+00:01:40,441 --> 00:01:46,791
 A prompt injection attempt. It clears the input guardrail,
 and the model refuses it anyway.
