@@ -1,24 +1,24 @@
 1
-00:00:00,000 --> 00:00:03,133
+00:00:00,000 --> 00:00:02,683
 The same knowledge base, from Claude Desktop.
 
 2
 00:00:02,733 --> 00:00:10,735
-SecuRAG exposes itself as an MCP server, so any MCP client
-can use it. Here it is in the connector list.
+SecuRAG exposes itself as an MCP server, so any MCP
+client can use it. Here it is in the connector list.
 
 3
-00:00:11,335 --> 00:00:15,564
+00:00:11,335 --> 00:00:15,114
 One question, in plain language, addressed to the
 knowledge base.
 
 4
-00:00:15,164 --> 00:00:20,693
+00:00:15,164 --> 00:00:20,243
 Claude discovers the tools the server offers, then calls
 ask_securag with the question.
 
 5
-00:00:20,293 --> 00:00:26,446
+00:00:20,293 --> 00:00:25,996
 The answer comes back through the same local retrieval
 pipeline — no copy-pasting between windows.
 

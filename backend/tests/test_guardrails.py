@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.guardrails.guard import GuardService
+from app.guardrails.guard import UNAVAILABLE, GuardService
 
 
 class TestGuardServiceInit:
@@ -98,8 +98,14 @@ class TestCheckInput:
         assert allowed is False
         assert msg != ""
 
-    async def test_allows_when_rails_init_fails(self):
-        """Should allow if NeMo fails to initialize."""
+    async def test_blocks_when_rails_init_fails(self):
+        """Should block if NeMo fails to initialize.
+
+        The rail was asked for and cannot answer, which is not the same as
+        the rail being switched off. This test used to assert the opposite --
+        a deployment with a bad NeMo config ran with no input rail and looked
+        healthy doing it.
+        """
         with patch("app.guardrails.guard.settings") as mock_settings:
             mock_settings.guardrails_enabled = True
             mock_settings.guardrails_config_path = "/nonexistent/path"
@@ -107,12 +113,29 @@ class TestCheckInput:
 
         # _get_rails will try to import and fail, returning None
         service._rails = None
-        # Force _enabled to stay True so it enters the try block
-        # but _get_rails returns None
         with patch.object(service, "_get_rails", new_callable=AsyncMock, return_value=None):
             allowed, msg = await service.check_input("test")
 
-        assert allowed is True
+        assert allowed is False
+        assert msg == UNAVAILABLE
+
+    async def test_real_init_failure_blocks_and_does_not_disable(self):
+        """A genuine load failure sets _broken, not _enabled.
+
+        Goes through the real `_get_rails` rather than patching it, so it
+        covers the path that actually collapsed the two flags.
+        """
+        with patch("app.guardrails.guard.settings") as mock_settings:
+            mock_settings.guardrails_enabled = True
+            mock_settings.guardrails_config_path = "/nonexistent/path"
+            service = GuardService()
+
+            allowed, msg = await service.check_input("What is a firewall?")
+
+        assert allowed is False
+        assert msg == UNAVAILABLE
+        assert service._broken is True
+        assert service._enabled is True
 
 
 class TestCheckOutput:

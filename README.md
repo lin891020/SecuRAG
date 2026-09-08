@@ -186,7 +186,7 @@ The DAG runs on a 6-hour schedule and executes two tasks in sequence:
 
 Task outputs are passed between stages via **XCom** (Airflow's inter-task communication mechanism). Failed ingestions retry once after 5 minutes.
 
-The Airflow web UI is available at **http://airflow.securag.test** (admin / admin), or **http://localhost:8313**. DAGs can also be triggered manually from the UI without waiting for the next scheduled run.
+The Airflow web UI is available at **http://localhost:8313** (admin / admin). DAGs can also be triggered manually from the UI without waiting for the next scheduled run.
 
 ### MCP Server — Claude Desktop Integration
 
@@ -296,8 +296,12 @@ make pull-model        # download Llama 3.2 into the host Ollama (~2 GB, first t
 make ps                # verify all containers are running
 ```
 
-Open **http://securag.test** in your browser (or **http://localhost:8311** — both work;
-the friendly name is served by the local Caddy on port 80, see `~/Projects/Caddyfile`).
+The backend applies database migrations on startup and refuses to start if they
+fail, so a backend that is up has a schema at `head`. To apply them by hand
+against a running stack — after pulling a change that adds a migration, say —
+use `make migrate`.
+
+Open **http://localhost:8311** in your browser.
 
 ### First Steps
 
@@ -424,7 +428,7 @@ SecuRAG/
 | `POST` | `/api/rag/search` | Semantic search — returns raw chunks without LLM generation |
 | `POST` | `/api/rag/ask` | Full RAG query — non-streaming, returns complete answer (used by MCP) |
 
-Interactive docs available at **http://api.securag.test/docs** (or **http://localhost:8310/docs**).
+Interactive docs available at **http://localhost:8310/docs**.
 
 ### SSE Event Stream (`POST /api/chat`)
 
