@@ -18,13 +18,13 @@
 
 Upload a security document, ask questions, and watch the three-stage pipeline run in real time — input guardrail check, vector retrieval, and streaming LLM generation with per-stage timers. Includes a multi-turn follow-up and a prompt injection attempt — the input guardrail passes it, and the model declines it anyway.
 
-<video src="https://github.com/user-attachments/assets/d8efbfea-d3d7-411d-906d-0bd1296a7c14" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/aad43a41-7fd5-4171-904b-cc918b1ab689" controls width="100%"></video>
 
 ### Demo 2 — Claude Desktop MCP Integration
 
 Query the same knowledge base directly from Claude Desktop using the `ask_securag` MCP tool — no copy-pasting, no context switching.
 
-<video src="https://github.com/user-attachments/assets/36499f2c-5f6e-41e1-8722-eada8319fcb2" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/eb0f6074-9c0f-49ca-8bba-4c1b6e65bcaf" controls width="100%"></video>
 
 ---
 
