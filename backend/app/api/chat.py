@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from typing import AsyncIterator
@@ -27,6 +28,62 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+#: Strong references to persistence tasks started while a request was being
+#: torn down. asyncio only holds a weak reference to a running task, so without
+#: this the write can be garbage collected before it reaches the database.
+_writebacks: set[asyncio.Task] = set()
+
+
+def _in_background(coro) -> None:
+    """Run `coro` outside the caller's cancellation scope.
+
+    Scheduling is synchronous, which is the point: it is the one thing that
+    still works while the surrounding task is being cancelled.
+    """
+    task = asyncio.create_task(coro)
+    _writebacks.add(task)
+    task.add_done_callback(_writebacks.discard)
+
+
+async def _persist(
+    session_id: uuid.UUID,
+    query: str,
+    tokens: list[str],
+    sources: list[dict] | None,
+    was_blocked: bool,
+    was_flagged: bool,
+    ip_address: str | None,
+) -> None:
+    """Write the assistant turn and any guardrail event. Never raises."""
+    full_response = "".join(tokens)
+    try:
+        async with async_session() as db:
+            if full_response:
+                try:
+                    db.add(ChatMessage(
+                        session_id=session_id,
+                        role="assistant",
+                        content=full_response,
+                        sources=sources,
+                    ))
+                    await db.commit()
+                except Exception:
+                    logger.exception("Failed to persist assistant message")
+
+            if was_blocked or was_flagged:
+                try:
+                    await log_event(
+                        db,
+                        event_type="guardrail_block" if was_blocked else "guardrail_flag",
+                        detail={"query": query[:200], "session_id": str(session_id)},
+                        ip_address=ip_address,
+                    )
+                except Exception:
+                    logger.exception("Failed to log guardrail event")
+    except Exception:
+        logger.exception("Write-back failed for session %s", session_id)
+
+
 async def _stream_and_persist(
     query: str,
     llm: object,
@@ -34,16 +91,33 @@ async def _stream_and_persist(
     history: list[dict],
     ip_address: str | None = None,
 ) -> AsyncIterator[str]:
-    """Wrap the RAG stream to collect the full response and persist it after streaming."""
+    """Stream the RAG response, recording it so the turn survives a disconnect.
+
+    Two things here are not obvious, and both were wrong before.
+
+    Each event is recorded *before* it is yielded. After a yield the generator
+    is suspended, and if the consumer never comes back that line never runs --
+    so the stored transcript was always one token short of what the reader saw.
+
+    Cancellation arrives as `CancelledError`, not `GeneratorExit`. Starlette
+    cancels the task that is iterating this generator when the client goes
+    away; `GeneratorExit` only shows up in the tidier case where the generator
+    is closed directly. Catching just the latter meant the write-back was
+    skipped in exactly the case it existed for -- measured, not assumed:
+    nothing at all was persisted for a stopped generation.
+
+    And the write cannot simply be awaited on the way out, because every await
+    inside a cancelled scope re-raises immediately. It is handed to a task of
+    its own instead.
+    """
     tokens: list[str] = []
     sources: list[dict] | None = None
     was_blocked = False
     was_flagged = False
+    interrupted = False
 
     try:
         async for event in query_rag(query, llm, history=history):
-            yield event
-
             data = parse_sse_event(event)
             if data is not None:
                 if data.get("type") == SSE_TOKEN:
@@ -61,34 +135,18 @@ async def _stream_and_persist(
                         was_blocked = True
                 elif data.get("type") == SSE_DONE:
                     sources = data.get("sources")
-    except GeneratorExit:
-        pass
 
-    full_response = "".join(tokens)
-    async with async_session() as db:
-        if full_response:
-            try:
-                assistant_msg = ChatMessage(
-                    session_id=session_id,
-                    role="assistant",
-                    content=full_response,
-                    sources=sources,
-                )
-                db.add(assistant_msg)
-                await db.commit()
-            except Exception:
-                logger.exception("Failed to persist assistant message")
-
-        if was_blocked or was_flagged:
-            try:
-                await log_event(
-                    db,
-                    event_type="guardrail_block" if was_blocked else "guardrail_flag",
-                    detail={"query": query[:200], "session_id": str(session_id)},
-                    ip_address=ip_address,
-                )
-            except Exception:
-                logger.exception("Failed to log guardrail event")
+            yield event
+    except (GeneratorExit, asyncio.CancelledError):
+        interrupted = True
+        raise
+    finally:
+        args = (session_id, query, tokens, sources, was_blocked, was_flagged,
+                ip_address)
+        if interrupted:
+            _in_background(_persist(*args))
+        else:
+            await _persist(*args)
 
 
 @router.post("")
@@ -127,10 +185,16 @@ async def chat(
         ip_address=ip_address,
     )
 
-    # Load recent conversation history (last 6 messages = 3 turns)
+    # Load recent conversation history (last 6 messages = 3 turns), excluding
+    # the message that was just saved. It is about to be passed separately as
+    # the question, and including it put the same sentence in the prompt twice
+    # -- once under "Previous conversation" as something already asked, and
+    # once as the question being asked -- while pushing a real earlier turn out
+    # of the six.
     history_result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session.id)
+        .where(ChatMessage.id != user_msg.id)
         .order_by(ChatMessage.created_at.desc())
         .limit(6)
     )

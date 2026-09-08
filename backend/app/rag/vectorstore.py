@@ -43,6 +43,11 @@ def add_chunks(
                 "filename": filename,
                 "file_type": file_type,
                 "chunk_index": i,
+                # 0 means "this format has no pages". Chroma's metadata values
+                # cannot be None, so the absence has to be spelled somehow;
+                # `retriever` turns it back into None on the way out. Real page
+                # numbers are 1-based (`file_parsers` counts from 1), so 0 is
+                # not a value any document can legitimately carry.
                 "page_number": c["page"] or 0,
             }
             for i, c in enumerate(chunks)

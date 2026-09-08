@@ -1,6 +1,8 @@
 """Tests for LLM providers and factory."""
 
 import json
+import sys
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -140,6 +142,54 @@ class TestVertexAIProvider:
 
         provider = VertexAIProvider(project="proj", region="us-central1", model="gemini-1.5-flash")
         assert provider.model_name() == "vertexai/gemini-1.5-flash"
+
+    async def test_stream_yields_chunks(self):
+        with _stubbed_vertex() as (provider, model):
+            model.generate_content.return_value = [
+                MagicMock(text="Incident"), MagicMock(text=" response"),
+            ]
+            got = [t async for t in provider.generate_stream("q")]
+
+        assert got == ["Incident", " response"]
+
+    async def test_stream_raises_what_the_producer_thread_hit(self):
+        """A failure mid-stream must reach the caller, not end the stream.
+
+        The producer runs in an executor thread; an exception there used to die
+        with the thread while the end-of-stream sentinel went out as usual, so a
+        revoked credential or a quota refusal arrived as a short answer and a
+        200 with nothing in the log.
+        """
+        def _boom(*_args, **_kwargs):
+            yield MagicMock(text="Incident")
+            raise RuntimeError("403 quota exceeded")
+
+        seen = []
+        with _stubbed_vertex() as (provider, model):
+            model.generate_content.side_effect = _boom
+            with pytest.raises(RuntimeError, match="quota exceeded"):
+                async for token in provider.generate_stream("q"):
+                    seen.append(token)
+
+        # what did arrive before the failure is still delivered
+        assert seen == ["Incident"]
+
+
+@contextmanager
+def _stubbed_vertex():
+    """A VertexAIProvider with the google SDK replaced by mocks.
+
+    The provider imports `vertexai` inside each method, so the stub has to stay
+    in `sys.modules` for the duration of the call, not just construction.
+    """
+    from app.llm.vertexai_provider import VertexAIProvider
+
+    model = MagicMock()
+    generative_models = MagicMock()
+    generative_models.GenerativeModel.return_value = model
+    with patch.dict(sys.modules, {"vertexai": MagicMock(),
+                                  "vertexai.generative_models": generative_models}):
+        yield VertexAIProvider(project="p", region="r", model="m"), model
 
 
 # ---------------------------------------------------------------------------

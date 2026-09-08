@@ -29,7 +29,10 @@ def retrieve(query: str, top_k: int | None = None) -> list[dict]:
             "doc_id": metadata.get("doc_id", ""),
             "filename": metadata.get("filename", ""),
             "chunk_index": metadata.get("chunk_index", 0),
-            "page_number": metadata.get("page_number"),
+            # Back from Chroma's stand-in for None -- see `vectorstore.add`.
+            # Left as 0, it reached the prompt as "Page 0" and the model was
+            # invited to cite it, on documents that have no pages at all.
+            "page_number": metadata.get("page_number") or None,
             "distance": distance,
         })
 

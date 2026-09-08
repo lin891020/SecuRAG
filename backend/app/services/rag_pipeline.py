@@ -27,7 +27,11 @@ Respond in the same language as the user's question."""
 
 def _build_prompt(query: str, contexts: list[dict], history: list[dict]) -> str:
     context_text = "\n\n".join(
-        f"[Source: {c['filename']}, Page {c['page_number']}]\n{c['text']}"
+        # Markdown and plain text have no pages, and a header reading
+        # "Page None" (or "Page 0") is an invitation to cite one.
+        f"[Source: {c['filename']}"
+        + (f", Page {c['page_number']}]" if c.get("page_number") else "]")
+        + f"\n{c['text']}"
         for c in contexts
     )
     history_text = ""

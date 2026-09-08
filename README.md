@@ -139,7 +139,9 @@ Timers use server-side Unix timestamps (`ts`) embedded in each `status` SSE even
 
 ### Stream Cancellation
 
-A **Stop** button appears while generation is in progress. Clicking it aborts the fetch via `AbortController` on the frontend. The backend detects the client disconnect via `GeneratorExit` and persists whatever partial response was accumulated before the abort — so the conversation history remains coherent even for interrupted messages.
+A **Stop** button appears while generation is in progress. Clicking it aborts the fetch via `AbortController` on the frontend. The backend records each event before it streams it and writes the partial answer back when the response generator is torn down — whether that arrives as `CancelledError` (a real client disconnect, which is what Starlette raises) or `GeneratorExit`. The write-back is handed to a task of its own, because every `await` inside a cancelled scope re-raises immediately. So the conversation history stays coherent for interrupted messages, and matches what was actually on screen.
+
+Switching conversations mid-answer aborts the request rather than letting it finish into a view that has moved on.
 
 ### AI Safety — Three-Layer Model
 
@@ -363,7 +365,7 @@ make test
 docker compose exec backend python -m pytest tests/ -v
 ```
 
-The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **116 tests, 0 failures**. It mocks Postgres, ChromaDB and the LLM, so `make test` needs the backend image but not a running stack.
+The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **122 tests, 0 failures**. It mocks Postgres, ChromaDB and the LLM, so `make test` needs the backend image but not a running stack.
 
 ### Project Structure
 

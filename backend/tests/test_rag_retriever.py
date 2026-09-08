@@ -32,6 +32,24 @@ class TestRetrieve:
         assert chunks[0]["distance"] == 0.15
         assert chunks[0]["chunk_index"] == 0
 
+    def test_pageless_formats_come_back_as_none_not_page_zero(self):
+        """Chroma cannot store None, so `add` writes 0; `retrieve` undoes it.
+
+        Left as 0 it reached the prompt as "Page 0" on Markdown and plain text,
+        which is a page number the model was then invited to cite.
+        """
+        results = {
+            "documents": [["Some markdown."]],
+            "metadatas": [[{"doc_id": "d1", "filename": "notes.md",
+                            "chunk_index": 0, "page_number": 0}]],
+            "distances": [[0.1]],
+        }
+        with patch("app.rag.retriever.embed_query", return_value=[0.1]), \
+             patch("app.rag.retriever.query_chunks", return_value=results):
+            chunks = retrieve("anything")
+
+        assert chunks[0]["page_number"] is None
+
     def test_returns_empty_when_no_results(self):
         """Should return empty list when ChromaDB has no matches."""
         mock_results = {"documents": [[]], "metadatas": [[]], "distances": [[]]}

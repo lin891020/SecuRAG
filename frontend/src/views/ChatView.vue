@@ -279,6 +279,27 @@ const modelOptions = computed(() =>
 )
 let abortController: AbortController | null = null
 
+// Which conversation the view is currently showing. Bumped whenever the user
+// navigates away; an in-flight sendMessage compares against it before writing
+// anything, and an in-flight session load does the same.
+//
+// Without it, switching conversations mid-answer left the stream running and
+// its result was pushed into `messages` — which by then belonged to a
+// different conversation. Switching twice quickly had the same shape: both
+// loads wrote to `messages`, and the slower one won regardless of which the
+// user had actually picked.
+let viewToken = 0
+
+function leaveConversation(): number {
+  abortController?.abort()
+  abortController = null
+  stopTimer()
+  liveSteps.value = []
+  isStreaming.value = false
+  streamingContent.value = ''
+  return ++viewToken
+}
+
 const copiedIdx = ref<number | null>(null)
 const expandedSources = ref<Record<number, boolean>>({})
 
@@ -364,6 +385,7 @@ async function loadSessions() {
 }
 
 function startNewSession() {
+  leaveConversation()
   currentSessionId.value = null
   messages.value = []
   expandedSources.value = {}
@@ -399,6 +421,7 @@ async function deleteSession(sessionId: string) {
     await apiDelete(API.CHAT_SESSION(sessionId))
     sessions.value = sessions.value.filter((s: Session) => s.id !== sessionId)
     if (currentSessionId.value === sessionId) {
+      leaveConversation()
       currentSessionId.value = null
       messages.value = []
     }
@@ -408,11 +431,13 @@ async function deleteSession(sessionId: string) {
 }
 
 async function switchSession(sessionId: string) {
+  const token = leaveConversation()
   currentSessionId.value = sessionId
   messages.value = []
 
   try {
     const data = await apiFetch<any[]>(API.CHAT_SESSION_MESSAGES(sessionId))
+    if (token !== viewToken) return   // the user moved on while this loaded
     messages.value = data.map((m: any) => ({
       role: m.role,
       content: m.content,
@@ -440,6 +465,10 @@ async function sendMessage() {
   const text = userInput.value.trim()
   if (!text || isStreaming.value) return
 
+  // The conversation this answer belongs to. Everything below checks it before
+  // touching shared state, because the user can switch away at any await.
+  const token = viewToken
+
   // Add user message
   messages.value.push({ role: 'user', content: text })
   userInput.value = ''
@@ -464,6 +493,8 @@ async function sendMessage() {
       throw new Error(`HTTP ${resp.status}`)
     }
 
+    if (token !== viewToken) return
+
     // Capture session ID from header
     const sessionId = resp.headers.get('X-Session-Id')
     if (sessionId) {
@@ -480,6 +511,10 @@ async function sendMessage() {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      if (token !== viewToken) {
+        await reader.cancel()
+        return
+      }
 
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
@@ -533,6 +568,8 @@ async function sendMessage() {
       }
     }
 
+    if (token !== viewToken) return
+
     // Finalize message
     const completedSteps: CompletedStep[] = liveSteps.value.map(s => ({
       label: s.label,
@@ -549,6 +586,7 @@ async function sendMessage() {
     // Refresh sessions list
     await loadSessions()
   } catch (e: any) {
+    if (token !== viewToken) return   // aborted by navigation, not by the user
     if (e?.name === 'AbortError') {
       // User stopped streaming — push whatever was accumulated
       if (streamingContent.value) {
@@ -570,11 +608,16 @@ async function sendMessage() {
       console.error('Chat error:', e)
     }
   } finally {
-    stopTimer()
-    liveSteps.value = []
-    isStreaming.value = false
-    streamingContent.value = ''
-    await scrollToBottom()
+    // `leaveConversation` has already reset all of this for the conversation
+    // the user moved to; clearing it again here would wipe the state of a
+    // stream that is legitimately running there.
+    if (token === viewToken) {
+      stopTimer()
+      liveSteps.value = []
+      isStreaming.value = false
+      streamingContent.value = ''
+      await scrollToBottom()
+    }
   }
 }
 

@@ -47,15 +47,38 @@ def scan_watch_folder(**context):
 
 
 def ingest_new_files(**context):
-    """Upload each new file to SecuRAG via the documents API."""
+    """Upload each new file to SecuRAG via the documents API.
+
+    Re-reads what is already indexed instead of trusting the scan task's XCom.
+    This task has `retries: 1` and raises when any single upload fails, so a
+    run that ingested nine files and failed on the tenth used to come back and
+    upload all ten again -- the XCom still listed the nine, because it was
+    written before any of them existed in the knowledge base. Asking the
+    backend again makes the retry idempotent; it costs one HTTP request.
+    """
     new_files = context["ti"].xcom_pull(key="new_files", task_ids="scan_watch_folder")
 
     if not new_files:
         print("No new files to ingest.")
         return 0
 
+    try:
+        already = _get_ingested_filenames()
+    except requests.RequestException as exc:
+        # Better to stop than to re-upload: a duplicate document is a duplicate
+        # set of chunks answering every future query.
+        raise RuntimeError(f"Could not check what is already ingested: {exc}") from exc
+
+    pending = [p for p in new_files if Path(p).name not in already]
+    if len(pending) != len(new_files):
+        skipped = [Path(p).name for p in new_files if Path(p).name in already]
+        print(f"Already ingested since the scan, skipping: {skipped}")
+    if not pending:
+        print("Everything from the scan is already in the knowledge base.")
+        return 0
+
     failed = []
-    for file_path in new_files:
+    for file_path in pending:
         path = Path(file_path)
         try:
             with path.open("rb") as f:
@@ -73,8 +96,8 @@ def ingest_new_files(**context):
     if failed:
         raise RuntimeError(f"Ingestion failed for: {failed}")
 
-    print(f"Done — {len(new_files) - len(failed)} file(s) ingested successfully.")
-    return len(new_files) - len(failed)
+    print(f"Done — {len(pending) - len(failed)} file(s) ingested successfully.")
+    return len(pending) - len(failed)
 
 
 default_args = {

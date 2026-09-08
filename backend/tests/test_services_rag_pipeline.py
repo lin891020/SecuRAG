@@ -21,7 +21,10 @@ class TestBuildPrompt:
         assert "Context about firewalls." in prompt
         assert "More context." in prompt
         assert "[Source: doc.pdf, Page 3]" in prompt
-        assert "[Source: guide.md, Page None]" in prompt
+        # a format without pages is cited without one, rather than at "Page None"
+        assert "[Source: guide.md]" in prompt
+        assert "Page None" not in prompt
+        assert "Page 0" not in prompt
 
     def test_empty_contexts(self):
         """Should still produce a valid prompt with no context."""
