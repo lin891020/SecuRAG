@@ -521,6 +521,14 @@ async function sendMessage() {
       buffer = lines.pop() || ''
 
       for (const line of lines) {
+        // One chunk can hold several events and this loop awaits between them
+        // (scrollToBottom waits a tick), so the check above is not enough: the
+        // user can leave part-way through a chunk. Nothing rendered these
+        // leftovers today, because the streaming block is behind
+        // `v-if="isStreaming"` and leaving clears it -- but that is three
+        // separate facts holding each other up, and the one that gives way is
+        // whichever someone edits first.
+        if (token !== viewToken) return
         if (!line.startsWith('data: ')) continue
         const jsonStr = line.slice(6).trim()
         if (!jsonStr) continue
