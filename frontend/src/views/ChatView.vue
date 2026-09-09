@@ -461,7 +461,17 @@ async function sendMessage() {
     // Capture session ID from header
     const sessionId = resp.headers.get('X-Session-Id')
     if (sessionId) {
+      const isNewSession = currentSessionId.value !== sessionId
       currentSessionId.value = sessionId
+      // Put a new conversation in the sidebar as soon as the backend has one,
+      // not when its first answer finishes. The refresh used to live at the
+      // end of the stream, so leaving mid-answer stranded the conversation:
+      // it was in the database, with the partial answer already written back,
+      // and absent from the list until the page was reloaded.
+      //
+      // Deliberately not awaited — the sidebar filling in is not something the
+      // stream should wait for, and `loadSessions` swallows its own errors.
+      if (isNewSession) void loadSessions()
     }
 
     // Read SSE stream
