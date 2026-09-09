@@ -42,8 +42,10 @@ It is not positioned as a production-ready enterprise product. Known gaps such a
 
 ```mermaid
 graph TD
-    User["Browser / Claude Desktop"]
-    FE["Frontend\nVue 3 · Nginx"]
+    Browser["Browser"]
+    Desktop["Claude Desktop"]
+    FE["Frontend\nVue 3 · Vite"]
+    MCP["mcp_server.py\nMCP tools"]
     BE["Backend\nFastAPI"]
     PG["PostgreSQL\nChat history · Audit logs"]
     CH["ChromaDB\nVector store"]
@@ -52,8 +54,10 @@ graph TD
     AF["Airflow\nAuto-ingest DAG"]
     WD["watched_docs/"]
 
-    User -->|HTTP / SSE| FE
+    Browser -->|HTTP / SSE| FE
     FE -->|REST + SSE| BE
+    Desktop -->|MCP over stdio\ndocker exec| MCP
+    MCP -->|POST /api/rag/ask| BE
     BE -->|SQLAlchemy| PG
     BE -->|Embeddings + Search| CH
     BE -->|Generate| OL
@@ -264,6 +268,7 @@ The following are known gaps that would need to be addressed before production d
 - **Direct prompt injection is not reliably blocked** — the input guardrail is an LLM self-check against Colang flows, and it passes phrasings those flows do not cover. The first demo above shows one: all three pipeline stages run, so the request reached the model and was declined there rather than at the rail. A model that refuses is a second layer, not a substitute for the first, and nothing here measures how much the rails actually catch — a labelled set of injection attempts scored against them is the missing piece
 - **Document prompt-injection defense** — malicious content embedded in uploaded documents (e.g. instructions hidden in a PDF) is not sanitized before being injected into the prompt context
 - **No document governance** — there is no versioning, approval workflow, or access-controlled upload; any user can add or delete documents
+- **The stack is a development configuration** — the frontend container runs the Vite dev server with hot reload rather than a built bundle behind a static server, and no service is fronted by TLS or a reverse proxy. `make up` is for running this on one machine, not for deploying it
 
 ---
 
@@ -280,7 +285,7 @@ The following are known gaps that would need to be addressed before production d
 | Database | PostgreSQL 16 | Chat history, documents, audit logs |
 | Pipeline Orchestration | Apache Airflow 2.9 | Scheduled auto-ingest from watched folder |
 | AI Integration | MCP (Model Context Protocol) | Exposes knowledge base as Claude Desktop tools |
-| Deployment | Docker Compose | Single `make up` to start everything |
+| Deployment | Docker Compose | Single `make up` to start everything; development configuration only — see Limitations |
 
 ---
 
