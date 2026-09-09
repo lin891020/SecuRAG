@@ -56,3 +56,8 @@ watched_docs/*
 # next to them are.
 docs/demo/build/
 docs/demo/*.mp4
+
+# Build logs. One of these was committed in April: 146 KB of UTF-16
+# PowerShell output, the largest file in the repository, at its root.
+build_log.txt
+*.build.log

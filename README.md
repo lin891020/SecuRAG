@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-109%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-122%20passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
 ---
@@ -381,7 +381,7 @@ SecuRAG/
 │   │   ├── rag/              # Embedder, splitter, ChromaDB retriever
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── services/         # rag_pipeline.py (SSE orchestration), audit_service.py
-│   │   └── utils/            # constants.py (SSE/doc status), request.py (get_client_ip), sse.py (parse_sse_event — used by mcp_server.py to consume the /api/chat SSE stream), file parsers
+│   │   └── utils/            # constants.py (SSE/doc status), request.py (get_client_ip), sse.py (parse_sse_event — used by api/chat.py and api/rag.py to read back their own stream), file parsers
 │   ├── mcp_server.py         # MCP server — exposes RAG tools to Claude Desktop
 │   ├── alembic/              # DB migrations (001 initial schema, 002 indexes)
 │   ├── tests/                # pytest — one file per module
@@ -418,7 +418,9 @@ SecuRAG/
 | `make airflow-setup` | Create Airflow metadata DB and run initial migrations (run once) |
 | `make test` | Run the backend test suite |
 | `make ps` | Show container status |
+| `make restart service=<name>` | Restart one service |
 | `make shell-backend` | Open a shell in the backend container |
+| `make shell-frontend` | Open a shell in the frontend container |
 
 ---
 
