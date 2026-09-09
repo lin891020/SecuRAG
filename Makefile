@@ -1,4 +1,4 @@
-.PHONY: up down logs build migrate test shell-backend shell-frontend pull-model airflow-setup
+.PHONY: up down logs build migrate test test-backend test-frontend shell-backend shell-frontend pull-model airflow-setup
 
 up:
 	docker compose up -d
@@ -15,11 +15,18 @@ build:
 migrate:
 	docker compose exec backend alembic upgrade head
 
-# --no-deps because the suite mocks its way past Postgres and ChromaDB: it
-# needs the image, not the stack, and requiring `make up` first is how a
-# documented command stays unrun.
-test:
+# `test` runs both suites. A `make test` that quietly covered only one of them
+# is how the other one stops being run.
+test: test-backend test-frontend
+
+# --no-deps because the suites mock their way past Postgres, ChromaDB and the
+# LLM: they need the images, not the stack, and requiring `make up` first is
+# how a documented command stays unrun.
+test-backend:
 	docker compose run --rm --no-deps backend python -m pytest tests/ -v
+
+test-frontend:
+	docker compose run --rm --no-deps frontend npm test
 
 shell-backend:
 	docker compose exec backend bash

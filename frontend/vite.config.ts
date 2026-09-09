@@ -1,9 +1,17 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  // The only tests here cover `useConversationView`, which uses `ref` and
+  // nothing from the DOM, so no browser environment is needed and neither
+  // @vue/test-utils nor happy-dom is installed.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.spec.ts'],
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

@@ -366,12 +366,12 @@ Ensure `GOOGLE_APPLICATION_CREDENTIALS` or Application Default Credentials are c
 ### Running Tests
 
 ```bash
-make test
-# or directly:
-docker compose exec backend python -m pytest tests/ -v
+make test              # both suites
+make test-backend      # pytest only
+make test-frontend     # vitest only
 ```
 
-The test suite covers API endpoints, RAG pipeline, guardrails service, LLM providers, and utilities — **132 tests, 0 failures**. It mocks Postgres, ChromaDB and the LLM, so `make test` needs the backend image but not a running stack.
+The backend suite covers API endpoints, the RAG pipeline, the guardrails service, LLM providers, start-up migrations, the Airflow auto-ingest logic and utilities — **132 tests, 0 failures**. The frontend suite covers the conversation-view guard that keeps a streaming answer attached to the conversation it belongs to — **6 tests**. Both mock Postgres, ChromaDB and the LLM, so they need the images but not a running stack.
 
 ### Project Structure
 
@@ -422,7 +422,9 @@ SecuRAG/
 | `make pull-model` | Pull Llama 3.2 into the host Ollama |
 | `make migrate` | Run pending Alembic migrations |
 | `make airflow-setup` | Create Airflow metadata DB and run initial migrations (run once) |
-| `make test` | Run the backend test suite |
+| `make test` | Run both test suites |
+| `make test-backend` | Run the backend suite (pytest) |
+| `make test-frontend` | Run the frontend suite (vitest) |
 | `make ps` | Show container status |
 | `make restart service=<name>` | Restart one service |
 | `make shell-backend` | Open a shell in the backend container |
