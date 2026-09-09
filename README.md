@@ -18,13 +18,13 @@
 
 Upload a security document, ask questions, and watch the pipeline run in real time — the three stages that report a timer are the input guardrail check, vector retrieval, and streaming LLM generation. Includes a multi-turn follow-up and a prompt injection attempt — the input guardrail passes it, and the model declines it anyway.
 
-<video src="https://github.com/user-attachments/assets/aad43a41-7fd5-4171-904b-cc918b1ab689" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/16cdf94e-b89a-4718-bd30-1ba14ac8bcd7" controls width="100%"></video>
 
 ### Demo 2 — Claude Desktop MCP Integration
 
 Query the same knowledge base directly from Claude Desktop using the `ask_securag` MCP tool — no copy-pasting, no context switching.
 
-<video src="https://github.com/user-attachments/assets/eb0f6074-9c0f-49ca-8bba-4c1b6e65bcaf" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/64980476-4f36-488b-b9b9-d1dd2a30bd95" controls width="100%"></video>
 
 ---
 
