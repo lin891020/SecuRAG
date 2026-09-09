@@ -12,19 +12,24 @@ from app.llm.factory import get_llm_provider
 logger = logging.getLogger(__name__)
 
 
-def _run_migrations() -> None:
+def _run_migrations(config=None) -> None:
     """Bring the database up to head. Blocking -- never call this on the loop.
 
-    Alembic's ``upgrade`` opens its own synchronous connection and waits on it.
-    Calling it directly from the async lifespan blocked the event loop for the
-    length of the migration, so nothing else -- including the health check
-    Docker waits on -- could make progress until it finished.
+    `alembic/env.py` runs its migrations through ``asyncio.run``, so this
+    cannot be called from anywhere that already has a loop: it raises
+    "asyncio.run() cannot be called from a running event loop". That is what
+    used to happen. The call sat directly in the async lifespan inside a bare
+    ``except Exception`` that logged a warning, so every start-up raised,
+    swallowed it, and carried on with whatever schema the database happened to
+    have -- which means start-up migrations never once ran.
+
+    `config` exists so a test can point the same code at a throwaway database;
+    production passes nothing and gets `alembic.ini`.
     """
     from alembic import command
     from alembic.config import Config
 
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
+    command.upgrade(config or Config("alembic.ini"), "head")
     logger.info("Database migrations applied successfully")
 
 

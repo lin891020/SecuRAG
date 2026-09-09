@@ -6,98 +6,30 @@ backend API.
 
 Drop files into the watched_docs/ folder in the project root and they will
 be automatically indexed on the next DAG run.
+
+The work itself lives in `securag_ingest_lib`, which imports no Airflow and so
+can be tested by the backend suite; this file is the schedule and the XCom
+plumbing. Keeping a DAG thin is the usual way to make its logic testable --
+`airflow` is only installed in the Airflow image.
 """
 
-import os
 from datetime import datetime, timedelta
-from pathlib import Path
 
-import requests
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-BACKEND_URL = os.getenv("SECURAG_BACKEND_URL", "http://backend:8000/api")
-WATCH_DIR = Path("/watched_docs")
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
-
-
-def _get_ingested_filenames() -> set[str]:
-    resp = requests.get(f"{BACKEND_URL}/documents", timeout=10)
-    resp.raise_for_status()
-    return {d["filename"] for d in resp.json().get("documents", [])}
+from securag_ingest_lib import ingest, scan
 
 
 def scan_watch_folder(**context):
-    """Find files in /watched_docs not yet in the knowledge base."""
-    if not WATCH_DIR.exists():
-        print(f"Watch directory {WATCH_DIR} does not exist — nothing to scan.")
-        context["ti"].xcom_push(key="new_files", value=[])
-        return 0
-
-    ingested = _get_ingested_filenames()
-    new_files = [
-        str(f)
-        for f in WATCH_DIR.iterdir()
-        if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS and f.name not in ingested
-    ]
-
+    new_files = scan()
     context["ti"].xcom_push(key="new_files", value=new_files)
-    print(f"Found {len(new_files)} new file(s): {[Path(p).name for p in new_files]}")
     return len(new_files)
 
 
 def ingest_new_files(**context):
-    """Upload each new file to SecuRAG via the documents API.
-
-    Re-reads what is already indexed instead of trusting the scan task's XCom.
-    This task has `retries: 1` and raises when any single upload fails, so a
-    run that ingested nine files and failed on the tenth used to come back and
-    upload all ten again -- the XCom still listed the nine, because it was
-    written before any of them existed in the knowledge base. Asking the
-    backend again makes the retry idempotent; it costs one HTTP request.
-    """
     new_files = context["ti"].xcom_pull(key="new_files", task_ids="scan_watch_folder")
-
-    if not new_files:
-        print("No new files to ingest.")
-        return 0
-
-    try:
-        already = _get_ingested_filenames()
-    except requests.RequestException as exc:
-        # Better to stop than to re-upload: a duplicate document is a duplicate
-        # set of chunks answering every future query.
-        raise RuntimeError(f"Could not check what is already ingested: {exc}") from exc
-
-    pending = [p for p in new_files if Path(p).name not in already]
-    if len(pending) != len(new_files):
-        skipped = [Path(p).name for p in new_files if Path(p).name in already]
-        print(f"Already ingested since the scan, skipping: {skipped}")
-    if not pending:
-        print("Everything from the scan is already in the knowledge base.")
-        return 0
-
-    failed = []
-    for file_path in pending:
-        path = Path(file_path)
-        try:
-            with path.open("rb") as f:
-                resp = requests.post(
-                    f"{BACKEND_URL}/documents/upload",
-                    files={"file": (path.name, f, "application/octet-stream")},
-                    timeout=300,
-                )
-                resp.raise_for_status()
-            print(f"Ingested: {path.name}")
-        except (requests.RequestException, OSError) as exc:
-            print(f"Failed to ingest {path.name}: {exc}")
-            failed.append(path.name)
-
-    if failed:
-        raise RuntimeError(f"Ingestion failed for: {failed}")
-
-    print(f"Done — {len(pending) - len(failed)} file(s) ingested successfully.")
-    return len(pending) - len(failed)
+    return ingest(new_files)
 
 
 default_args = {
@@ -117,14 +49,14 @@ with DAG(
     tags=["securag", "ingestion"],
 ) as dag:
 
-    scan = PythonOperator(
+    scan_task = PythonOperator(
         task_id="scan_watch_folder",
         python_callable=scan_watch_folder,
     )
 
-    ingest = PythonOperator(
+    ingest_task = PythonOperator(
         task_id="ingest_new_files",
         python_callable=ingest_new_files,
     )
 
-    scan >> ingest
+    scan_task >> ingest_task
