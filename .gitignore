@@ -61,3 +61,6 @@ docs/demo/*.mp4
 # PowerShell output, the largest file in the repository, at its root.
 build_log.txt
 *.build.log
+
+# vue-tsc -b writes this next to tsconfig.json; `npm run build` leaves it behind.
+*.tsbuildinfo
