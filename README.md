@@ -269,6 +269,7 @@ The following are known gaps that would need to be addressed before production d
 - **Document prompt-injection defense** — malicious content embedded in uploaded documents (e.g. instructions hidden in a PDF) is not sanitized before being injected into the prompt context
 - **No document governance** — there is no versioning, approval workflow, or access-controlled upload; any user can add or delete documents
 - **The stack is a development configuration** — the frontend container runs the Vite dev server with hot reload rather than a built bundle behind a static server, and no service is fronted by TLS or a reverse proxy. `make up` is for running this on one machine, not for deploying it
+- **Python dependencies are not pinned** — `backend/pyproject.toml` uses `>=` bounds with no lock file, so two builds of the same commit can install different versions of PyTorch, ChromaDB or NeMo Guardrails. The frontend is pinned (`package-lock.json` + `npm ci`); doing the same for the Python side needs a resolver such as `uv` or `pip-tools` and has not been done
 
 ---
 
