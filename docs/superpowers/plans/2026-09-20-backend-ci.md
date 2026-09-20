@@ -23,7 +23,7 @@
 **Files:**
 - 不建檔。只是量。
 
-- [ ] **Step 1: 建一個乾淨的 venv 裝 dev 依賴**
+- [x] **Step 1: 建一個乾淨的 venv 裝 dev 依賴**
 
 ```bash
 cd ~/Projects/SecuRAG/backend
@@ -33,21 +33,21 @@ uv pip install -e ".[dev]" 2>&1 | tail -3
 ```
 Expected: 最後一行沒有 error。sentence-transformers 會拉 torch，幾分鐘。
 
-- [ ] **Step 2: 跑測試**
+- [x] **Step 2: 跑測試**
 
 ```bash
 python -m pytest tests/ -q 2>&1 | tail -15
 ```
 Expected: 最後一行像 `N passed` 或 `N passed, M failed`。把 N 和 M 抄下來。README 說 132，實際數字以這裡為準。
 
-- [ ] **Step 3: 如果有 fail，先判斷是環境還是程式**
+- [x] **Step 3: 如果有 fail，先判斷是環境還是程式**
 
 ```bash
 python -m pytest tests/ -q -x 2>&1 | grep -E "Error|error|assert" | head -5
 ```
 規則：`ModuleNotFoundError`、`ConnectionRefused`、找不到 `host.docker.internal` 這類是環境問題，記進 Task 2 的 workflow 註解，用 `-k "not <名字>"` 或 `-m` 跳過並在 CI log 印出跳過的清單（照 aoi-agent 的 "What this job did not run" 那段）。`AssertionError` 是程式問題，**不修**，記進 HANDOFF.md 讓 Mike 決定。
 
-- [ ] **Step 4: 清掉 venv**
+- [x] **Step 4: 清掉 venv**
 
 ```bash
 deactivate; rm -rf .venv-ci
@@ -63,7 +63,7 @@ deactivate; rm -rf .venv-ci
 **Interfaces:**
 - Produces: 一個叫 `tests` 的 job，push 與 PR 都跑。
 
-- [ ] **Step 1: 寫檔**
+- [x] **Step 1: 寫檔**
 
 ```yaml
 # backend/tests 用 in-memory SQLite，並 mock 掉 Postgres、ChromaDB 與 LLM
@@ -115,21 +115,21 @@ jobs:
 
 如果 Task 1 Step 3 有要跳過的測試，在 `Tests` 那步的指令後面加 `-k "not <名字>"`，並在上一行加註解寫為什麼。
 
-- [ ] **Step 2: 確認 frontend 有 lockfile 與 test script**
+- [x] **Step 2: 確認 frontend 有 lockfile 與 test script**
 
 ```bash
 ls ~/Projects/SecuRAG/frontend/package-lock.json && grep -n '"test"' ~/Projects/SecuRAG/frontend/package.json
 ```
 Expected: 兩個都有。沒有 `package-lock.json` 就把 `cache:` 兩行拿掉、`npm ci` 改 `npm install`；沒有 `test` script 就整個 `frontend` job 刪掉。
 
-- [ ] **Step 3: 本機語法檢查**
+- [x] **Step 3: 本機語法檢查**
 
 ```bash
 python3 -c "import yaml,sys; yaml.safe_load(open('$HOME/Projects/SecuRAG/.github/workflows/tests.yml')); print('yaml ok')"
 ```
 Expected: `yaml ok`
 
-- [ ] **Step 4: Commit 並推**
+- [x] **Step 4: Commit 並推**
 
 ```bash
 cd ~/Projects/SecuRAG
@@ -143,7 +143,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 git push
 ```
 
-- [ ] **Step 5: 等 CI 結果**
+- [x] **Step 5: 等 CI 結果**
 
 ```bash
 sleep 90; gh run list --limit 1; gh run view --log-failed 2>/dev/null | tail -20
@@ -158,19 +158,19 @@ Expected: `completed success`。失敗就讀 log，回到 Task 1 Step 3 的規�
 - Modify: `README.md:374`
 - Modify: `~/Projects/career-ops/cv.md`（SecuRAG 那段的「109 tests, 0 failures」）
 
-- [ ] **Step 1: 從 CI log 抓數字**
+- [x] **Step 1: 從 CI log 抓數字**
 
 ```bash
 cd ~/Projects/SecuRAG && gh run view --log 2>/dev/null | grep -oE "[0-9]+ passed[^\n]*" | tail -1
 ```
 
-- [ ] **Step 2: 改 README 第 374 行的 `132 tests, 0 failures` 成實際數字；改 cv.md 的 `109 tests` 成同一個數字，並在 README 的 badge 區加一行**
+- [x] **Step 2: 改 README 第 374 行的 `132 tests, 0 failures` 成實際數字；改 cv.md 的 `109 tests` 成同一個數字，並在 README 的 badge 區加一行**
 
 ```markdown
 [![tests](https://github.com/lin891020/SecuRAG/actions/workflows/tests.yml/badge.svg)](https://github.com/lin891020/SecuRAG/actions/workflows/tests.yml)
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 cd ~/Projects/SecuRAG && git add README.md && git commit -m "README 的測試數字改成 CI 跑出來的那個，加 badge
@@ -181,7 +181,7 @@ cd ~/Projects/career-ops && git add cv.md && git commit -m "SecuRAG 測試數對
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 4: 補 HANDOFF.md（這個 repo 還沒有）**
+- [x] **Step 4: 補 HANDOFF.md（這個 repo 還沒有）**
 
 ```bash
 cat > ~/Projects/SecuRAG/HANDOFF.md <<'H'
