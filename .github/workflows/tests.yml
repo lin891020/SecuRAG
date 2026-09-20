@@ -1,0 +1,51 @@
+# backend/tests 用 in-memory SQLite，並 mock 掉 Postgres、ChromaDB 與 LLM
+# （見 backend/tests/conftest.py），所以這裡不起 docker compose，直接裝套件跑。
+# Makefile 的 `make test-backend` 走 docker，是給本機用的；兩條路跑的是同一批測試。
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Tests
+        # 兩個環境變數是 docker 掛載點的替身，不是測試的 bug：
+        #   test_dag_ingest.py 把 `/dags` 寫死在 sys.path，PYTHONPATH 讓它在 runner 上也找得到；
+        #   Settings.upload_dir 預設 /app/uploads，runner 上 /app 不可寫。
+        # -rs 讓被 skip 的測試在 log 裡有名字，綠燈不能靠悄悄縮水的套件。
+        env:
+          PYTHONPATH: ${{ github.workspace }}/dags
+          SECURAG_UPLOAD_DIR: ${{ runner.temp }}/uploads
+        run: python -m pytest tests/ -rs -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
