@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-132%20passing-brightgreen?style=flat-square)
+[![tests](https://github.com/lin891020/SecuRAG/actions/workflows/tests.yml/badge.svg)](https://github.com/lin891020/SecuRAG/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
 ---
